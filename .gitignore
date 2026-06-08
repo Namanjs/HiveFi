@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+dist/
+build/
+
+# Environment files (contain private keys and API secrets)
+.env
+.env.local
+.env.*.local
+
+# Hardhat / Solidity
+contracts/cache/
+contracts/artifacts/
+contracts/typechain-types/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*

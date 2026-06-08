@@ -1,0 +1,18 @@
+{
+  "name": "@hivefi/sdk",
+  "version": "0.1.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "peerDependencies": {
+    "socket.io-client": "^4.0.0"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.0.0",
+    "typescript": "^5.0.0",
+    "vitest": "^4.1.8"
+  }
+}

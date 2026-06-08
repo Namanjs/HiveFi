@@ -1,0 +1,175 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Outfit:wght@300;400;500;600;700&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Outfit", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+}
+
+:root {
+  --color-bg-base: #131314;
+  --color-surface: #1e1f20;
+  --color-border: rgba(255, 255, 255, 0.08);
+  --color-text-primary: #e3e3e3;
+  --color-text-secondary: #c4c7c5;
+  --color-accent: #8b5cf6; /* Default Purple */
+  --color-secondary-accent: #06b6d4; /* Default Cyan */
+}
+
+[data-theme="purple"] { --color-accent: #8b5cf6; --color-secondary-accent: #06b6d4; }
+[data-theme="cyan"] { --color-accent: #06b6d4; --color-secondary-accent: #8b5cf6; }
+[data-theme="emerald"] { --color-accent: #10b981; --color-secondary-accent: #f59e0b; }
+[data-theme="rose"] { --color-accent: #f43f5e; --color-secondary-accent: #3b82f6; }
+[data-theme="amber"] { --color-accent: #f59e0b; --color-secondary-accent: #10b981; }
+
+body {
+  margin: 0;
+  padding: 0;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  background-color: var(--color-bg-base);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background-image: radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--color-accent) 15%, transparent), transparent 50%);
+  background-attachment: fixed;
+}
+
+@keyframes bg-shift {
+  0% { background-position: 0% 0%; }
+  100% { background-position: 100% 100%; }
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* React Flow styles */
+.react-flow__bg {
+  background-color: transparent !important;
+}
+
+.custom-node {
+  padding: 16px;
+  border-radius: 16px;
+  background-color: rgba(10, 10, 15, 0.7);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 220px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 8px 32px -4px rgba(0, 0, 0, 0.5);
+}
+
+.custom-node.active-pulse {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 20px var(--color-accent-glow), inset 0 0 10px rgba(139, 92, 246, 0.1);
+}
+
+.custom-node.active-success {
+  border-color: rgba(16, 185, 129, 0.5);
+  box-shadow: 0 0 20px rgba(16, 185, 129, 0.15), inset 0 0 10px rgba(16, 185, 129, 0.05);
+}
+
+.custom-node.active-fail {
+  border-color: rgba(239, 68, 68, 0.5);
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.15), inset 0 0 10px rgba(239, 68, 68, 0.05);
+}
+
+.custom-node.active-offline {
+  border-color: rgba(251, 146, 60, 0.5);
+  box-shadow: 0 0 20px rgba(251, 146, 60, 0.15), inset 0 0 10px rgba(251, 146, 60, 0.05);
+  animation: pulse-offline 1.5s infinite;
+}
+
+@keyframes pulse-offline {
+  0% { box-shadow: 0 0 20px rgba(251, 146, 60, 0.15), inset 0 0 10px rgba(251, 146, 60, 0.05); }
+  50% { box-shadow: 0 0 30px rgba(251, 146, 60, 0.3), inset 0 0 15px rgba(251, 146, 60, 0.1); }
+  100% { box-shadow: 0 0 20px rgba(251, 146, 60, 0.15), inset 0 0 10px rgba(251, 146, 60, 0.05); }
+}
+
+/* React Flow Handle custom nodes positioning */
+.react-flow__handle {
+  width: 6px !important;
+  height: 6px !important;
+  background: rgba(255, 255, 255, 0.5) !important;
+  border: none !important;
+  border-radius: 50% !important;
+}
+
+/* React Flow custom edge styles */
+.react-flow__edge-path {
+  stroke: rgba(255, 255, 255, 0.15);
+  stroke-width: 2;
+  transition: all 0.4s ease;
+}
+
+.react-flow__edge.glowing .react-flow__edge-path {
+  stroke: var(--color-accent);
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 5px var(--color-accent-glow));
+  stroke-dasharray: 8 6;
+  animation: edge-flow 1s linear infinite;
+}
+
+.react-flow__edge.glowing-success .react-flow__edge-path {
+  stroke: #10b981;
+  stroke-width: 2.5;
+  filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.6));
+}
+
+@keyframes edge-flow {
+  from { stroke-dashoffset: 14; }
+  to { stroke-dashoffset: 0; }
+}
+
+/* Loading shimmer animation */
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@utility animate-shimmer {
+  background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 2.5s infinite linear;
+}
+
+.smooth-spring {
+  transition-timing-function: cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Coin Drop Animation for Swarm */
+.usdc-particle {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #fff;
+  position: absolute;
+  z-index: 100;
+  pointer-events: none;
+  box-shadow: 0 0 12px 2px rgba(255, 255, 255, 0.8);
+}
