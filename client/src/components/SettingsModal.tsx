@@ -21,6 +21,49 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+        return;
+      }
+      
+      if (e.key === 'Tab') {
+        const focusableElements = document.querySelectorAll(
+          '.settings-modal button, .settings-modal input'
+        );
+        if (focusableElements.length === 0) return;
+        
+        const firstElement = focusableElements[0] as HTMLElement;
+        const lastElement = focusableElements[focusableElements.length - 1] as HTMLElement;
+
+        if (e.shiftKey) {
+          if (document.activeElement === firstElement) {
+            lastElement.focus();
+            e.preventDefault();
+          }
+        } else {
+          if (document.activeElement === lastElement) {
+            firstElement.focus();
+            e.preventDefault();
+          }
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    
+    // Auto-focus first input when opened
+    setTimeout(() => {
+      const firstInput = document.querySelector('.settings-modal input') as HTMLElement;
+      if (firstInput) firstInput.focus();
+    }, 100);
+
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   const handleSave = () => {
     localStorage.setItem("openai_key", openaiKey);
     localStorage.setItem("anthropic_key", anthropicKey);
@@ -42,7 +85,12 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       />
       
       {/* Modal */}
-      <div className="relative w-full max-w-md bg-[#121214]/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden animate-[slide-down_0.2s_ease-out]">
+      <div 
+        className="settings-modal relative w-full max-w-md bg-[#121214]/90 backdrop-blur-xl border border-white/10 rounded-2xl shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden animate-[slide-down_0.2s_ease-out]"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-title"
+      >
         
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/5 bg-white/[0.02]">
@@ -50,11 +98,12 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             <div className="w-8 h-8 rounded-lg bg-[var(--color-accent)]/20 flex items-center justify-center border border-[var(--color-accent)]/30">
               <Settings size={16} className="text-[var(--color-accent)]" />
             </div>
-            <h2 className="text-lg font-bold text-white tracking-wide">Settings</h2>
+            <h2 id="settings-title" className="text-lg font-bold text-white tracking-wide">Settings</h2>
           </div>
           <button 
             onClick={onClose}
             className="p-2 rounded-full hover:bg-white/10 text-[#888] hover:text-white transition-colors"
+            aria-label="Close settings"
           >
             <X size={18} />
           </button>
@@ -67,6 +116,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
               <Key size={14} /> OpenAI API Key
             </label>
             <input 
+              id="openai-key"
               type="password" 
               value={openaiKey}
               onChange={(e) => setOpenaiKey(e.target.value)}

@@ -30,7 +30,7 @@ function StreamingMessage({ content }: { content: string }) {
               <pre {...props} />
             </div>
           ),
-          code: ({node, className, children, ...props}: any) => {
+          code: ({node, className, children, ...props}: React.HTMLAttributes<HTMLElement> & { node?: unknown, inline?: boolean }) => {
             const match = /language-(\w+)/.exec(className || '')
             return !match ? (
               <code className="bg-black/40 px-1.5 py-0.5 rounded text-[var(--color-accent)] font-mono text-[11px]" {...props}>

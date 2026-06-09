@@ -1,7 +1,19 @@
 import { useState, useRef, useEffect } from "react";
 import { Bot, Network, ChevronDown } from "lucide-react";
 
-function CustomSelect({ options, value, onChange, placeholder }: any) {
+interface SelectOption {
+  value: string;
+  label: string;
+}
+
+interface CustomSelectProps {
+  options: SelectOption[];
+  value: string;
+  onChange: (val: string) => void;
+  placeholder?: string;
+}
+
+function CustomSelect({ options, value, onChange, placeholder }: CustomSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -15,13 +27,23 @@ function CustomSelect({ options, value, onChange, placeholder }: any) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  const selectedOption = options.find((o: any) => o.value === value);
+  const selectedOption = options.find((o) => o.value === value);
 
   return (
     <div className="relative w-full" ref={containerRef}>
       <div 
-        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none transition-colors cursor-pointer flex justify-between items-center hover:border-white/20 hover:bg-white/10"
+        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none transition-colors cursor-pointer flex justify-between items-center hover:border-white/20 hover:bg-white/10 focus:ring-2 focus:ring-[var(--color-accent)]"
         onClick={() => setIsOpen(!isOpen)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setIsOpen(!isOpen);
+          }
+        }}
+        tabIndex={0}
+        role="combobox"
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
         style={{ borderColor: isOpen ? "var(--color-accent)" : "" }}
       >
         <span className={selectedOption ? "text-white" : "text-white/40"}>
@@ -34,19 +56,30 @@ function CustomSelect({ options, value, onChange, placeholder }: any) {
         className={`absolute top-full left-0 w-full mt-2 bg-[#1a1a1c]/95 backdrop-blur-3xl border border-white/10 rounded-xl overflow-hidden shadow-[0_16px_40px_rgba(0,0,0,0.8)] transition-all duration-300 z-[100] origin-top ${
           isOpen ? "opacity-100 scale-y-100 translate-y-0" : "opacity-0 scale-y-95 -translate-y-2 pointer-events-none"
         }`}
+        role="listbox"
       >
-        {options.map((opt: any) => (
+        {options.map((opt) => (
           <div 
             key={opt.value}
-            className={`px-4 py-3 text-sm cursor-pointer transition-colors flex items-center gap-2 ${
+            className={`px-4 py-3 text-sm cursor-pointer transition-colors flex items-center gap-2 outline-none ${
               value === opt.value 
                 ? "bg-[var(--color-accent)]/20 text-white font-medium border-l-2 border-[var(--color-accent)]" 
-                : "text-[#ccc] hover:bg-white/10 hover:text-white border-l-2 border-transparent"
+                : "text-[#ccc] hover:bg-white/10 hover:text-white focus:bg-white/10 focus:text-white border-l-2 border-transparent"
             }`}
             onClick={() => {
               onChange(opt.value);
               setIsOpen(false);
             }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                onChange(opt.value);
+                setIsOpen(false);
+              }
+            }}
+            tabIndex={isOpen ? 0 : -1}
+            role="option"
+            aria-selected={value === opt.value}
           >
             {opt.label}
           </div>

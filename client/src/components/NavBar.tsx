@@ -18,7 +18,7 @@ export default function NavBar() {
         className={`flex items-center px-4 py-3 text-sm font-medium transition-all duration-500 smooth-spring rounded-xl ${
           isActive ? "bg-white/10 text-white" : "text-[#888] hover:bg-white/5 hover:text-white"
         } ${isCollapsed ? "justify-center px-0" : ""}`}
-        title={isCollapsed ? label : undefined}
+        data-tooltip={isCollapsed ? label : undefined}
       >
         <Icon size={18} className="shrink-0" />
         <span className={`transition-all duration-500 smooth-spring whitespace-nowrap overflow-hidden ${isCollapsed ? "max-w-0 opacity-0 ml-0" : "max-w-[200px] opacity-100 ml-3"}`}>
@@ -88,7 +88,7 @@ export default function NavBar() {
         <button 
           onClick={() => setIsSettingsOpen(true)}
           className="p-2 rounded-xl text-[#888] hover:text-white hover:bg-white/10 transition-colors"
-          title="Settings"
+          data-tooltip="Settings"
         >
           <Settings size={18} />
         </button>

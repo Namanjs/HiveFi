@@ -76,7 +76,7 @@ export default function EarningsBar({
           <button 
             onClick={() => setShowThemes(!showThemes)}
             className="flex items-center justify-center w-7 h-7 rounded-full hover:bg-white/10 transition-colors shrink-0"
-            title="Choose Theme"
+            data-tooltip="Choose Theme"
           >
             <Palette size={14} className="text-white/70" />
           </button>
@@ -88,7 +88,7 @@ export default function EarningsBar({
                   key={t.id}
                   onClick={() => { setTheme(t.id); setShowThemes(false); }}
                   className={`w-3.5 h-3.5 rounded-full ${t.color} transition-all duration-300 ${theme === t.id ? "ring-2 ring-white ring-offset-2 ring-offset-black scale-110" : "opacity-50 hover:opacity-100 hover:scale-110"}`}
-                  title={`Switch to ${t.id} theme`}
+                  data-tooltip={`Switch to ${t.id} theme`}
                 />
               ))}
             </div>
@@ -105,7 +105,7 @@ export default function EarningsBar({
             <button 
               onClick={disconnectWallet}
               className="ml-2 p-1 rounded-lg hover:bg-white/10 text-[#888] hover:text-red-400 transition-colors"
-              title="Disconnect Wallet"
+              data-tooltip="Disconnect Wallet"
             >
               <Unplug size={14} />
             </button>

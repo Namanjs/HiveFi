@@ -16,6 +16,10 @@ export function useSocket(serverUrl: string = "http://localhost:3001"): UseSocke
     const socketInstance: Socket = io(serverUrl, {
       transports: ["websocket"],
       autoConnect: true,
+      reconnection: true,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      reconnectionAttempts: Infinity,
     });
 
     socketInstance.on("connect", () => {
@@ -24,10 +28,19 @@ export function useSocket(serverUrl: string = "http://localhost:3001"): UseSocke
       setSocketId(socketInstance.id || null);
     });
 
-    socketInstance.on("disconnect", () => {
-      console.log("Disconnected from WebSocket Server");
+    socketInstance.on("disconnect", (reason) => {
+      console.log("Disconnected from WebSocket Server:", reason);
       setIsConnected(false);
       setSocketId(null);
+    });
+
+    socketInstance.on("connect_error", (error) => {
+      console.error("Socket connect_error:", error.message);
+      setIsConnected(false);
+    });
+
+    socketInstance.on("reconnect_attempt", (attempt) => {
+      console.log(`Socket reconnect_attempt: ${attempt}`);
     });
 
     setSocket(socketInstance);

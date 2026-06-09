@@ -55,19 +55,19 @@ export default function LogFeed({ events, mode = "normal", onToggleEnlarge, onTo
         
         <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
           {onToggleEnlarge && (
-            <button onClick={onToggleEnlarge} className="p-1.5 hover:bg-white/10 rounded-lg text-white/50 hover:text-white transition-colors" title={isEnlarged ? "Restore" : "Enlarge panel"}>
+            <button onClick={onToggleEnlarge} className="p-1.5 hover:bg-white/10 rounded-lg text-white/50 hover:text-white transition-colors" data-tooltip-bottom={isEnlarged ? "Restore" : "Enlarge panel"}>
               {mode === "enlarged" || mode === "fullscreen" ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
             </button>
           )}
           {onToggleFullScreen && (
-            <button onClick={onToggleFullScreen} className={`p-1.5 hover:bg-white/10 rounded-lg transition-colors ${mode === "fullscreen" ? "text-[var(--color-accent)] bg-[var(--color-accent)]/20" : "text-white/50 hover:text-white"}`} title="Toggle Fullscreen">
+            <button onClick={onToggleFullScreen} className={`p-1.5 hover:bg-white/10 rounded-lg transition-colors ${mode === "fullscreen" ? "text-[var(--color-accent)] bg-[var(--color-accent)]/20" : "text-white/50 hover:text-white"}`} data-tooltip-bottom-right="Toggle Fullscreen">
               <Monitor size={14} />
             </button>
           )}
         </div>
       </div>
 
-      {!isMinimized && (
+      <div className={`flex-1 flex flex-col relative transition-opacity duration-300 ${isMinimized ? "opacity-0 pointer-events-none" : "opacity-100"}`}>
         <div className="flex-1 overflow-y-auto p-6 space-y-4 font-mono text-[11px] bg-black/20 scroll-smooth relative" ref={containerRef}>
           {/* Scanline overlay */}
           <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:100%_4px] pointer-events-none mix-blend-overlay" />
@@ -103,7 +103,7 @@ export default function LogFeed({ events, mode = "normal", onToggleEnlarge, onTo
             ))
           )}
         </div>
-      )}
+      </div>
     </div>
   );
 }

@@ -215,16 +215,13 @@ export default function App() {
             />
         </div>
 
-        <div className={`grid gap-6 transition-all duration-500 smooth-spring min-w-0 ${
+        <div className={`flex flex-col gap-6 transition-all duration-300 ease-out min-w-0 ${
             showAbstraction ? "opacity-100 h-[600px] lg:h-full mt-6 lg:mt-0" : "opacity-0 h-0 lg:h-auto"
-          } ${
-            activePanel === "swarm" 
-              ? "grid-rows-[1fr_60px]" 
-              : activePanel === "log" 
-                ? "grid-rows-[60px_1fr]" 
-                : "grid-rows-[1fr_300px]"
           }`}>
-            <ErrorBoundary>
+            <div className={`transition-all duration-300 ease-out min-h-0 ${
+              activePanel === "log" ? "h-[60px] shrink-0" : "flex-1"
+            }`}>
+              <ErrorBoundary>
               <SwarmCanvas 
                 executionStep={executionStep} 
                 activeSpecialists={activeSpecialists}
@@ -239,6 +236,11 @@ export default function App() {
                 }}
               />
             </ErrorBoundary>
+            </div>
+            
+            <div className={`transition-all duration-300 ease-out min-h-0 ${
+              activePanel === "swarm" ? "h-[60px] shrink-0" : activePanel === "log" ? "flex-1" : "h-[300px] shrink-0"
+            }`}>
             <LogFeed 
               events={events}
               mode={activePanel === "swarm" ? "minimized" : isFullScreen && activePanel === "log" ? "fullscreen" : activePanel === "log" ? "enlarged" : "normal"}
@@ -251,6 +253,7 @@ export default function App() {
                 else { setActivePanel("log"); setIsFullScreen(true); }
               }}
             />
+            </div>
         </div>
       </main>
     </div>

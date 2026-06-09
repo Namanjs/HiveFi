@@ -1,5 +1,5 @@
 import { useMemo, useEffect, useState } from "react";
-import { ReactFlow, Background, BackgroundVariant, useNodesState, useEdgesState, Handle, Position, Node, Edge } from "@xyflow/react";
+import { ReactFlow, Background, BackgroundVariant, useNodesState, useEdgesState, Handle, Position, Node, Edge, ReactFlowProvider, useReactFlow } from "@xyflow/react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Brain, Server, Database, LucideIcon, Maximize2, Minimize2, Monitor } from "lucide-react";
 import "@xyflow/react/dist/style.css";
@@ -69,6 +69,21 @@ const CustomNode = ({ data }: { data: CustomNodeData }) => {
 const nodeTypes = {
   custom: CustomNode,
 };
+
+function FlowFitter({ mode, numSpecialists }: { mode: string; numSpecialists: number }) {
+  const { fitView } = useReactFlow();
+  useEffect(() => {
+    // Fire immediately to start animating view along with CSS resize
+    fitView({ padding: 0.2, duration: 300 });
+    
+    // Fire again at the end of the CSS transition to guarantee perfect centering
+    const timeout = setTimeout(() => {
+      fitView({ padding: 0.2, duration: 300 });
+    }, 350);
+    return () => clearTimeout(timeout);
+  }, [mode, numSpecialists, fitView]);
+  return null;
+}
 
 export default function SwarmCanvas({ executionStep, activeSpecialists, mode = "normal", onToggleEnlarge, onToggleFullScreen }: SwarmCanvasProps) {
   const [particleAnimation, setParticleAnimation] = useState<"escrow" | "release" | "refund" | null>(null);
@@ -261,36 +276,39 @@ export default function SwarmCanvas({ executionStep, activeSpecialists, mode = "
 
         <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
           {onToggleEnlarge && (
-            <button onClick={onToggleEnlarge} className="p-1.5 hover:bg-white/10 rounded-lg text-white/50 hover:text-white transition-colors" title={isEnlarged ? "Restore" : "Enlarge panel"}>
+            <button onClick={onToggleEnlarge} className="p-1.5 hover:bg-white/10 rounded-lg text-white/50 hover:text-white transition-colors" data-tooltip-bottom={isEnlarged ? "Restore" : "Enlarge panel"}>
               {mode === "enlarged" || mode === "fullscreen" ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
             </button>
           )}
           {onToggleFullScreen && (
-            <button onClick={onToggleFullScreen} className={`p-1.5 hover:bg-white/10 rounded-lg transition-colors ${mode === "fullscreen" ? "text-[var(--color-secondary-accent)] bg-[var(--color-secondary-accent)]/20" : "text-white/50 hover:text-white"}`} title="Toggle Fullscreen">
+            <button onClick={onToggleFullScreen} className={`p-1.5 hover:bg-white/10 rounded-lg transition-colors ${mode === "fullscreen" ? "text-[var(--color-secondary-accent)] bg-[var(--color-secondary-accent)]/20" : "text-white/50 hover:text-white"}`} data-tooltip-bottom-right="Toggle Fullscreen">
               <Monitor size={14} />
             </button>
           )}
         </div>
       </div>
 
-      {!isMinimized && (
-        <div className="relative flex-1 w-full h-full">
-          <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        fitView
-        fitViewOptions={{ padding: 0.2 }}
-        nodesConnectable={false}
-        nodesDraggable={false}
-        panOnDrag={false}
-        zoomOnScroll={false}
-        zoomOnPinch={false}
-        zoomOnDoubleClick={false}
-        proOptions={{ hideAttribution: true }}
-      >
-          <Background color="#ffffff" gap={20} size={1} variant={BackgroundVariant.Lines} style={{ opacity: 0.05 }} />
-        </ReactFlow>
+      <div className={`relative flex-1 w-full h-full flex flex-col transition-opacity duration-300 ${isMinimized ? "opacity-0 pointer-events-none" : "opacity-100"}`}>
+        <ReactFlowProvider>
+            <FlowFitter mode={mode} numSpecialists={activeSpecialists.length} />
+            <ReactFlow
+              nodes={nodes}
+              edges={edges}
+              nodeTypes={nodeTypes}
+              fitView
+              fitViewOptions={{ padding: 0.2 }}
+              minZoom={0.1}
+              nodesConnectable={false}
+              nodesDraggable={false}
+              panOnDrag={false}
+              zoomOnScroll={false}
+              zoomOnPinch={false}
+              zoomOnDoubleClick={false}
+              proOptions={{ hideAttribution: true }}
+            >
+              <Background color="#ffffff" gap={20} size={1} variant={BackgroundVariant.Lines} style={{ opacity: 0.05 }} />
+            </ReactFlow>
+          </ReactFlowProvider>
 
         <AnimatePresence>
           {particleAnimation && (
@@ -304,7 +322,6 @@ export default function SwarmCanvas({ executionStep, activeSpecialists, mode = "
           )}
         </AnimatePresence>
       </div>
-      )}
     </div>
   );
 }
