@@ -68,22 +68,22 @@ export default function LogFeed({ events, mode = "normal", onToggleEnlarge, onTo
       </div>
 
       <div className={`flex-1 flex flex-col relative transition-opacity duration-300 ${isMinimized ? "opacity-0 pointer-events-none" : "opacity-100"}`}>
-        <div className="flex-1 overflow-y-auto p-6 space-y-4 font-mono text-[11px] bg-black/20 scroll-smooth relative" ref={containerRef}>
+        <div className="flex-1 overflow-y-auto p-6 space-y-4 font-mono text-[13px] bg-black/20 scroll-smooth relative" ref={containerRef}>
           {/* Scanline overlay */}
           <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:100%_4px] pointer-events-none mix-blend-overlay" />
           
           {events.length === 0 ? (
-            <div className="flex items-center gap-2 text-[#666] text-[10px]">
+            <div className="flex items-center gap-2 text-[#888] text-[12px]">
               <div className="w-2 h-2 bg-[var(--color-accent)] rounded-full animate-ping" />
               Awaiting system events...
             </div>
           ) : (
             events.map((evt, idx) => (
               <div key={idx} className="flex items-start gap-3 leading-relaxed animate-[slide-up_0.3s_ease-out_forwards] opacity-0 relative z-10">
-                <span className="text-[#555] shrink-0 border-r border-[#333] pr-3">
+                <span className="text-[#888] shrink-0 border-r border-[#333] pr-3">
                   {new Date(evt.timestamp).toLocaleTimeString([], { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' })}
                 </span>
-                <span className="flex-1 text-[#ccc]">
+                <span className="flex-1 text-gray-200">
                   <span className={`${getLogColor(evt.status)} drop-shadow-sm`}>
                     {evt.message}
                   </span>

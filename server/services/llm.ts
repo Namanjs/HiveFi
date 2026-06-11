@@ -1,5 +1,6 @@
 import Groq from "groq-sdk";
 import * as dotenv from "dotenv";
+import * as registry from "./registry";
 
 dotenv.config();
 
@@ -20,11 +21,19 @@ export interface IntentResult {
  * Uses OpenAI function calling to determine if delegation is required.
  */
 export async function detectIntent(prompt: string): Promise<IntentResult> {
+  const specialists = await registry.getAllSpecialists();
+  const activeNiches = Array.from(new Set(specialists.map(s => s.niche)));
+  const nicheString = activeNiches.length > 0 ? activeNiches.join(", ") : "None";
+
   const messages: any[] = [
     {
       role: "system",
       content:
-        "You are the HiveFi Orchestrator. You are a general-purpose AI. If the user's request requires generating SQL, Python code, UI/UX design specs, or frontend React code, you MUST delegate using the delegate_to_specialist tool. For complex tasks requiring multiple specializations (e.g. building a website needs DESIGN then FRONTEND), call the tool MULTIPLE times in the correct execution order. Available niches: SQL, PYTHON, DESIGN, FRONTEND. For general questions, answer directly.",
+        `You are the HiveFi Orchestrator. You are a highly capable general-purpose AI. If the user's request explicitly matches one of the specialized niches currently available on the network, you MUST delegate using the delegate_to_specialist tool. For complex tasks requiring multiple available specializations, call the tool MULTIPLE times in the correct execution order. 
+
+Currently Available Network Niches: ${nicheString}.
+
+IMPORTANT: If the user asks for something (like Python, SQL, React, etc.) but that niche is NOT listed in the Available Network Niches above, DO NOT DELEGATE. You must answer the user's request directly yourself.`,
     },
     { role: "user", content: prompt },
   ];
@@ -40,7 +49,7 @@ export async function detectIntent(prompt: string): Promise<IntentResult> {
           properties: {
             niche: {
               type: "string",
-              description: "The specialization needed: SQL, PYTHON, DESIGN, or FRONTEND",
+              description: `The specialization needed. MUST be exactly one of: ${nicheString}`,
             },
             sub_prompt: {
               type: "string",
@@ -53,12 +62,18 @@ export async function detectIntent(prompt: string): Promise<IntentResult> {
     },
   ];
 
-  const response = await groq.chat.completions.create({
+  // If there are no niches available, don't even provide the tool to the LLM to save tokens and prevent hallucinations
+  const callOptions: any = {
     model: "llama-3.1-8b-instant",
     messages,
-    tools,
-    tool_choice: "auto",
-  });
+  };
+
+  if (activeNiches.length > 0) {
+    callOptions.tools = tools;
+    callOptions.tool_choice = "auto";
+  }
+
+  const response = await groq.chat.completions.create(callOptions);
 
   const responseMessage = response.choices[0].message;
 
@@ -72,8 +87,8 @@ export async function detectIntent(prompt: string): Promise<IntentResult> {
     }
     // Multiple tool calls = chain
     const chain = responseMessage.tool_calls
-      .filter(tc => tc.type === "function" && tc.function.name === "delegate_to_specialist")
-      .map(tc => {
+      .filter((tc: any) => tc.type === "function" && tc.function.name === "delegate_to_specialist")
+      .map((tc: any) => {
         if (tc.type === "function") {
           const args = JSON.parse(tc.function.arguments);
           return { niche: args.niche, sub_prompt: args.sub_prompt };

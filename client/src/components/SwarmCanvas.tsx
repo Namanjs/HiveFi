@@ -1,5 +1,5 @@
-import { useMemo, useEffect, useState } from "react";
-import { ReactFlow, Background, BackgroundVariant, useNodesState, useEdgesState, Handle, Position, Node, Edge, ReactFlowProvider, useReactFlow } from "@xyflow/react";
+import { useMemo, useEffect, useState, useRef } from "react";
+import { ReactFlow, Background, BackgroundVariant, useNodesState, useEdgesState, Handle, Position, Node, Edge, ReactFlowProvider, useReactFlow, useNodesInitialized } from "@xyflow/react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Brain, Server, Database, LucideIcon, Maximize2, Minimize2, Monitor } from "lucide-react";
 import "@xyflow/react/dist/style.css";
@@ -70,23 +70,95 @@ const nodeTypes = {
   custom: CustomNode,
 };
 
-function FlowFitter({ mode, numSpecialists }: { mode: string; numSpecialists: number }) {
+function FlowFitter({ 
+  mode, 
+  numSpecialists, 
+  containerRef 
+}: { 
+  mode: string; 
+  numSpecialists: number; 
+  containerRef: React.RefObject<HTMLDivElement | null>;
+}) {
   const { fitView } = useReactFlow();
+  const nodesInitialized = useNodesInitialized();
+  const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const firstFitDone = useRef(false);
+
+  // 1. Fit view when nodes are initialized or when specialists count changes
   useEffect(() => {
-    // Fire immediately to start animating view along with CSS resize
+    if (nodesInitialized) {
+      if (!firstFitDone.current) {
+        let timeoutId: ReturnType<typeof setTimeout>;
+        const frameId = requestAnimationFrame(() => {
+          timeoutId = setTimeout(() => {
+            fitView({ padding: 0.2, duration: 0 });
+            firstFitDone.current = true;
+          }, 100);
+        });
+        return () => {
+          cancelAnimationFrame(frameId);
+          clearTimeout(timeoutId);
+        };
+      } else {
+        // Instant fit to avoid flash of off-center content
+        fitView({ padding: 0.2, duration: 0 });
+        
+        // Secondary deferred fits to handle font layout shifts or initial rendering cycles
+        const t1 = setTimeout(() => fitView({ padding: 0.2, duration: 0 }), 50);
+        const t2 = setTimeout(() => fitView({ padding: 0.2, duration: 0 }), 150);
+        const t3 = setTimeout(() => fitView({ padding: 0.2, duration: 0 }), 300);
+        return () => {
+          clearTimeout(t1);
+          clearTimeout(t2);
+          clearTimeout(t3);
+        };
+      }
+    }
+  }, [nodesInitialized, numSpecialists, fitView]);
+
+  // 2. Observe container size changes and trigger fitView when size stabilizes (e.g. after transitions/resizes)
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const observer = new ResizeObserver(() => {
+      // Clear previous timer during transition/resize
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current);
+      }
+      
+      // Trigger fitView after size stabilizes (100ms after last resize event)
+      debounceTimer.current = setTimeout(() => {
+        fitView({ padding: 0.2, duration: 200 });
+      }, 100);
+    });
+
+    observer.observe(container);
+
+    return () => {
+      observer.disconnect();
+      if (debounceTimer.current) {
+        clearTimeout(debounceTimer.current);
+      }
+    };
+  }, [fitView, containerRef]);
+
+  // 3. Handle panel mode transitions (e.g. normal -> enlarged -> fullscreen)
+  useEffect(() => {
     fitView({ padding: 0.2, duration: 300 });
     
-    // Fire again at the end of the CSS transition to guarantee perfect centering
     const timeout = setTimeout(() => {
       fitView({ padding: 0.2, duration: 300 });
     }, 350);
     return () => clearTimeout(timeout);
-  }, [mode, numSpecialists, fitView]);
+  }, [mode, fitView]);
+
   return null;
 }
 
 export default function SwarmCanvas({ executionStep, activeSpecialists, mode = "normal", onToggleEnlarge, onToggleFullScreen }: SwarmCanvasProps) {
   const [particleAnimation, setParticleAnimation] = useState<"escrow" | "release" | "refund" | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (executionStep === "ESCROW_LOCKED") {
@@ -108,7 +180,7 @@ export default function SwarmCanvas({ executionStep, activeSpecialists, mode = "
     {
       id: "orchestrator",
       type: "custom",
-      position: { x: 200, y: 30 },
+      position: { x: 0, y: 0 },
       data: {
         label: "ORCHESTRATOR",
         desc: "Task analysis & routing",
@@ -121,7 +193,7 @@ export default function SwarmCanvas({ executionStep, activeSpecialists, mode = "
     {
       id: "blockchain",
       type: "custom",
-      position: { x: 200, y: 160 },
+      position: { x: 0, y: 160 },
       data: {
         label: "BASE SEPOLIA",
         desc: "L2 Escrow Contract",
@@ -157,8 +229,8 @@ export default function SwarmCanvas({ executionStep, activeSpecialists, mode = "
       const total = activeSpecialists.length;
       const spacing = 280;
       const totalWidth = (total - 1) * spacing;
-      const startX = 200 - totalWidth / 2;
-      const x = total === 1 ? 200 : startX + index * spacing;
+      const startX = 0 - totalWidth / 2;
+      const x = total === 1 ? 0 : startX + index * spacing;
 
       return {
         id: `specialist-${niche}`,
@@ -288,14 +360,14 @@ export default function SwarmCanvas({ executionStep, activeSpecialists, mode = "
         </div>
       </div>
 
-      <div className={`relative flex-1 w-full h-full flex flex-col transition-opacity duration-300 ${isMinimized ? "opacity-0 pointer-events-none" : "opacity-100"}`}>
+      <div ref={containerRef} className={`relative flex-1 w-full h-full flex flex-col transition-opacity duration-300 ${isMinimized ? "opacity-0 pointer-events-none" : "opacity-100"}`}>
         <ReactFlowProvider>
-            <FlowFitter mode={mode} numSpecialists={activeSpecialists.length} />
-            <ReactFlow
-              nodes={nodes}
-              edges={edges}
-              nodeTypes={nodeTypes}
-              fitView
+          <FlowFitter mode={mode} numSpecialists={activeSpecialists.length} containerRef={containerRef} />
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            fitView
               fitViewOptions={{ padding: 0.2 }}
               minZoom={0.1}
               nodesConnectable={false}
@@ -308,7 +380,7 @@ export default function SwarmCanvas({ executionStep, activeSpecialists, mode = "
             >
               <Background color="#ffffff" gap={20} size={1} variant={BackgroundVariant.Lines} style={{ opacity: 0.05 }} />
             </ReactFlow>
-          </ReactFlowProvider>
+        </ReactFlowProvider>
 
         <AnimatePresence>
           {particleAnimation && (

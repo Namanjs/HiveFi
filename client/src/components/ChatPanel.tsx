@@ -2,42 +2,56 @@ import { useState, useRef, useEffect, FormEvent } from "react";
 import { Send } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
-function StreamingMessage({ content }: { content: string }) {
+function StreamingMessage({ content, isTyping, onComplete }: { content: string, isTyping?: boolean, onComplete?: () => void }) {
   const [displayed, setDisplayed] = useState("");
 
   useEffect(() => {
-    let index = 0;
+    if (isTyping === false) {
+      setDisplayed(content);
+      return;
+    }
     const interval = setInterval(() => {
       setDisplayed((prev) => {
         if (prev.length < content.length) {
-          return content.slice(0, prev.length + 1); // Stream 1 char at a time
+          return content.slice(0, prev.length + 1);
         }
         clearInterval(interval);
+        if (onComplete) onComplete();
         return prev;
       });
     }, 15);
     return () => clearInterval(interval);
-  }, [content]);
+  }, [content, isTyping, onComplete]);
 
   return (
-    <div className="markdown-prose space-y-2">
+    <div className="markdown-prose space-y-2 text-sm break-words min-w-0 max-w-full overflow-hidden">
       <ReactMarkdown 
         remarkPlugins={[remarkGfm]}
         components={{
-          pre: ({node, ...props}) => (
-            <div className="bg-black/60 border border-white/10 rounded-md p-3 overflow-x-auto text-[11px] font-mono text-emerald-400 mt-2 shadow-inner">
-              <pre {...props} />
-            </div>
-          ),
-          code: ({node, className, children, ...props}: React.HTMLAttributes<HTMLElement> & { node?: unknown, inline?: boolean }) => {
+          code: ({node, className, children, ...props}: any) => {
             const match = /language-(\w+)/.exec(className || '')
-            return !match ? (
-              <code className="bg-black/40 px-1.5 py-0.5 rounded text-[var(--color-accent)] font-mono text-[11px]" {...props}>
-                {children}
-              </code>
+            return match ? (
+              <div className="rounded-md overflow-hidden my-3 border border-white/10 shadow-lg max-w-full">
+                <div className="bg-[#1e1e1e] px-4 py-1.5 text-xs text-white/50 border-b border-white/5 font-mono uppercase tracking-wider flex items-center justify-between">
+                  <span>{match[1]}</span>
+                </div>
+                <div className="overflow-x-auto max-w-full">
+                  <SyntaxHighlighter
+                    {...props}
+                    style={vscDarkPlus}
+                    language={match[1]}
+                    PreTag="div"
+                    customStyle={{ margin: 0, padding: '16px', fontSize: '13px', background: '#0a0a0c', minWidth: '100%' }}
+                  >
+                    {String(children).replace(/\n$/, '')}
+                  </SyntaxHighlighter>
+                </div>
+              </div>
             ) : (
-              <code className={className} {...props}>
+              <code className="bg-black/40 px-1.5 py-0.5 rounded text-[#a78bfa] font-mono text-[13px] break-all" {...props}>
                 {children}
               </code>
             )
@@ -61,22 +75,37 @@ interface ChatPanelProps {
   isLoading: boolean;
   ratingPrompt?: { modelId: string; taskId: string; niche: string } | null;
   onRate?: (score: number) => void;
-  walletAddress?: string;
+  onCancel?: () => void;
 }
 
-export default function ChatPanel({ messages, onSendMessage, isLoading, ratingPrompt, onRate, walletAddress }: ChatPanelProps) {
+export default function ChatPanel({ messages, onSendMessage, isLoading, ratingPrompt, onRate, onCancel }: ChatPanelProps) {
   const [input, setInput] = useState("");
+  const [activeStreamIndex, setActiveStreamIndex] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, isLoading]);
+  }, [messages, isLoading, activeStreamIndex]);
 
-  const handleSubmit = (e: FormEvent) => {
-    e.preventDefault();
+  useEffect(() => {
+    if (messages.length > 0 && messages[messages.length - 1].sender === "assistant") {
+      setActiveStreamIndex(messages.length - 1);
+    } else {
+      setActiveStreamIndex(null);
+    }
+  }, [messages.length]);
+
+  const isExecutionActive = isLoading || activeStreamIndex !== null;
+
+  const handleSubmit = (e?: FormEvent) => {
+    if (e) e.preventDefault();
     if (!input.trim() || isLoading) return;
     onSendMessage(input);
     setInput("");
+    if (textareaRef.current) {
+      textareaRef.current.style.height = "auto";
+    }
   };
 
   const [welcomeMessage, setWelcomeMessage] = useState("What's next?");
@@ -95,24 +124,30 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, ratingPr
   }, []);
 
   return (
-    <div className="flex flex-col h-full w-full relative">
+    <div className="flex flex-col h-full w-full overflow-hidden relative min-w-0">
       
       {/* Messages Area */}
-      <div className={`flex-1 overflow-y-auto px-4 py-8 space-y-6 scroll-smooth ${messages.length === 0 ? "hidden" : "block"}`}>
+      <div className={`flex-1 overflow-y-auto px-4 py-8 space-y-6 scroll-smooth min-w-0 ${messages.length === 0 ? "hidden" : "block"}`}>
         {messages.map((m, idx) => (
           <div key={idx} className={`flex flex-col ${m.sender === "user" ? "items-end" : "items-start"}`}>
             <span className="text-[10px] font-mono text-[#666] mb-1.5 uppercase">
               {m.sender === "user" ? "User" : "System"}
             </span>
             <div
-              className={`max-w-[85%] p-3 text-sm leading-relaxed ${
+              className={`max-w-[85%] min-w-0 overflow-hidden p-3 text-sm leading-relaxed ${
                 m.sender === "user"
                   ? "bg-white/10 text-white shadow-md border border-white/10 rounded-2xl rounded-br-sm"
                   : "bg-gradient-to-r from-[var(--color-accent)]/10 to-transparent border-l-2 border-l-[var(--color-accent)] border-y border-y-white/5 border-r border-r-white/5 text-[var(--color-text-primary)] rounded-r-lg"
               }`}
             >
               {m.sender === "assistant" ? (
-                <StreamingMessage content={m.text} />
+                <StreamingMessage 
+                  content={m.text} 
+                  isTyping={activeStreamIndex === idx}
+                  onComplete={() => {
+                    if (activeStreamIndex === idx) setActiveStreamIndex(null);
+                  }}
+                />
               ) : (
                 <div className="whitespace-pre-wrap">{m.text}</div>
               )}
@@ -156,7 +191,7 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, ratingPr
       {messages.length === 0 && (
         <div className="flex-1 flex flex-col items-center justify-center -mt-20">
           <h1 className="text-4xl md:text-5xl font-medium tracking-tight mb-12 text-transparent bg-clip-text bg-gradient-to-r from-white via-white/80 to-white/40 text-center pb-2">
-            {walletAddress ? `Welcome back, ${walletAddress.substring(0, 6)}...${walletAddress.slice(-4)}` : welcomeMessage}
+            {welcomeMessage}
           </h1>
         </div>
       )}
@@ -164,20 +199,47 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, ratingPr
       {/* Input Area (Bottom Fixed or Centered if empty) */}
       <div className={`p-4 w-full max-w-3xl mx-auto transition-all duration-500 ease-in-out ${messages.length === 0 ? "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 mt-10" : ""}`}>
         <form onSubmit={handleSubmit} className="flex gap-3 relative group w-full">
-          <input
-            type="text"
-            className="flex-1 bg-[#1a1a1c]/80 backdrop-blur-xl border border-white/10 rounded-[32px] px-8 py-5 text-base text-white placeholder-white/40 focus:outline-none focus:border-[var(--color-accent)]/50 focus:ring-1 focus:ring-[var(--color-accent)]/50 focus:shadow-[0_0_30px_rgba(139,92,246,0.15)] transition-all shadow-[0_4px_20px_rgba(0,0,0,0.5)]"
+          <textarea
+            ref={textareaRef}
+            className="flex-1 bg-[#1a1a1c]/80 backdrop-blur-xl border border-white/10 rounded-3xl px-8 py-5 pr-16 text-base text-white placeholder-white/40 focus:outline-none focus:border-[var(--color-accent)]/50 focus:ring-1 focus:ring-[var(--color-accent)]/50 focus:shadow-[0_0_30px_rgba(139,92,246,0.15)] transition-all shadow-[0_4px_20px_rgba(0,0,0,0.5)] resize-none overflow-y-auto min-h-[64px] max-h-[200px]"
             placeholder="Enter command..."
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              e.target.style.height = 'auto';
+              e.target.style.height = `${Math.min(e.target.scrollHeight, 200)}px`;
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                handleSubmit();
+              }
+            }}
+            rows={1}
             disabled={isLoading}
           />
           <button
-            type="submit"
-            className="absolute right-3 top-1/2 -translate-y-1/2 p-3 rounded-full bg-white/5 text-white/50 hover:bg-white/10 hover:text-white transition-all disabled:opacity-30 disabled:hover:bg-transparent"
-            disabled={isLoading || !input.trim()}
+            type={isExecutionActive ? "button" : "submit"}
+            onClick={() => {
+              if (isExecutionActive) {
+                if (isLoading && onCancel) onCancel();
+                if (activeStreamIndex !== null) setActiveStreamIndex(null);
+              }
+            }}
+            className={`absolute right-3 top-1/2 -translate-y-1/2 p-3 rounded-full transition-all duration-300 flex items-center justify-center ${
+              isExecutionActive 
+                ? "bg-white/10 text-white hover:bg-red-500/80 cursor-pointer" 
+                : !input.trim() 
+                  ? "bg-white/5 text-white/30 cursor-not-allowed" 
+                  : "bg-[var(--color-accent)] text-white hover:scale-105 cursor-pointer shadow-[0_0_15px_var(--color-accent)]"
+            }`}
+            disabled={!isExecutionActive && !input.trim()}
           >
-            <Send size={20} className={isLoading ? "animate-pulse" : ""} />
+            {isExecutionActive ? (
+              <div className="w-3.5 h-3.5 bg-white rounded-[2px]" />
+            ) : (
+              <Send size={18} className={input.trim() ? "translate-x-0.5" : ""} />
+            )}
           </button>
         </form>
         <div className="text-center mt-3 text-xs text-white/50 font-medium">

@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSocket } from "./hooks/useSocket";
 import EarningsBar from "./components/EarningsBar";
 import ChatPanel from "./components/ChatPanel";
@@ -27,13 +27,31 @@ export default function App() {
   const [events, setEvents] = useState<LogEvent[]>([]);
   const [executionStep, setExecutionStep] = useState<string | null>(null);
   const [walletBalances, setWalletBalances] = useState<{ orchestrator: string; specialists: Record<string, string> }>({ orchestrator: "1.00", specialists: {} });
-  const [addresses, setAddresses] = useState({ walletA: "", walletB: "" });
   const [activeSpecialists, setActiveSpecialists] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [completedTask, setCompletedTask] = useState<{ modelId: string; taskId: string; niche: string } | null>(null);
   const [showAbstraction, setShowAbstraction] = useState<boolean>(false);
   const [activePanel, setActivePanel] = useState<"swarm" | "log" | null>(null);
   const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
+
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const handleCancelRequest = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setIsLoading(false);
+    setExecutionStep("ERROR");
+    setEvents((prev) => [
+      ...prev,
+      { timestamp: new Date(), status: "ERROR", message: "User cancelled the request." },
+    ]);
+    setMessages((prev) => [
+      ...prev,
+      { sender: "assistant", text: "*(Request cancelled by user)*" },
+    ]);
+  };
 
   useEffect(() => {
     async function fetchBalances() {
@@ -42,8 +60,6 @@ export default function App() {
         const data = await response.json();
         if (data.success || data.orchestrator) { // fallback check if we don't return success
           setWalletBalances({ orchestrator: data.orchestrator, specialists: data.specialists || {} });
-          // Keep existing address set if it exists or clear.
-          setAddresses({ walletA: data.walletA || "", walletB: data.walletB || "" });
         }
       } catch (err) {
         console.error("Error fetching initial balances:", err);
@@ -142,13 +158,19 @@ export default function App() {
     setEvents([]);
     setActiveSpecialists([]);
     
+    abortControllerRef.current = new AbortController();
+
     setMessages((prev) => [...prev, { sender: "user", text: promptText }]);
 
     try {
       const response = await fetch(`${API_BASE}/api/orchestrate`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "x-api-key": "hivefi-dev-key-local"
+        },
         body: JSON.stringify({ prompt: promptText, socketId }),
+        signal: abortControllerRef.current?.signal
       });
 
       const data = await response.json();
@@ -166,7 +188,8 @@ export default function App() {
           { timestamp: new Date(), status: "ERROR", message: `Failed: ${data.error}` },
         ]);
       }
-    } catch (error) {
+    } catch (error: any) {
+      if (error.name === 'AbortError') return;
       setMessages((prev) => [
         ...prev,
         { 
@@ -180,12 +203,14 @@ export default function App() {
         { timestamp: new Date(), status: "ERROR", message: `System offline. Mock response generated.` },
       ]);
     } finally {
-      setIsLoading(false);
+      if (abortControllerRef.current) {
+        setIsLoading(false);
+      }
     }
   };
 
   return (
-    <div className="flex flex-col h-full w-full text-white bg-transparent">
+    <div className="flex flex-col h-full w-full text-white bg-transparent min-w-0">
       <EarningsBar
         walletBalances={walletBalances}
         isConnected={isConnected}
@@ -194,7 +219,7 @@ export default function App() {
       />
 
       <main 
-        className={`flex-1 grid grid-cols-1 p-4 md:p-6 overflow-y-auto lg:overflow-hidden transition-all duration-500 smooth-spring ${
+        className={`flex-1 min-w-0 grid grid-cols-1 p-4 md:p-6 overflow-y-auto lg:overflow-hidden transition-all duration-500 smooth-spring ${
           showAbstraction 
             ? isFullScreen 
               ? "lg:grid-cols-[0px_1fr] gap-0" 
@@ -202,8 +227,8 @@ export default function App() {
             : "lg:grid-cols-[1fr_0px] gap-0"
         }`}
       >
-        <div className={`transition-all duration-500 smooth-spring flex flex-col h-full items-center min-w-0 ${
-          isFullScreen && showAbstraction ? "hidden lg:flex lg:w-0 lg:opacity-0 lg:overflow-hidden" : "opacity-100"
+        <div className={`transition-all duration-500 smooth-spring flex flex-col h-full w-full overflow-hidden min-w-0 ${
+          isFullScreen && showAbstraction ? "hidden lg:flex lg:w-0 lg:opacity-0" : "opacity-100"
         }`}>
             <ChatPanel
               messages={messages}
@@ -211,7 +236,7 @@ export default function App() {
               isLoading={isLoading}
               ratingPrompt={completedTask}
               onRate={handleRate}
-              walletAddress={addresses.walletA}
+              onCancel={handleCancelRequest}
             />
         </div>
 

@@ -128,7 +128,7 @@ Use the HiveFi SDK to give your agents access to decentralized specialists.
 ## Smart Contract
 
 **Network:** Base Sepolia
-**Address:** `0xYOUR_CONTRACT_ADDRESS_HERE` *(Update after deployment)*
+**Address:** `0x0a6b5e859f5AebD43eB5DBF2AD3c42A6A52794f0`
 
 **Key Functions:**
 - `registerModel()`: Registers a new specialist identity.
