@@ -97,10 +97,11 @@ app.get("/api/health", (req: Request, res: Response) => {
 interface OrchestrationRequestBody {
   prompt: string;
   socketId?: string;
+  maxFee?: number;
 }
 
 app.post("/api/orchestrate", orchestrateLimiter, requireApiKey, async (req: Request<{}, {}, OrchestrationRequestBody>, res: Response): Promise<any> => {
-  const { prompt, socketId } = req.body;
+  const { prompt, socketId, maxFee } = req.body;
 
   if (!prompt || typeof prompt !== 'string') {
     return res.status(400).json({ success: false, error: "Prompt must be a non-empty string" });
@@ -115,7 +116,7 @@ app.post("/api/orchestrate", orchestrateLimiter, requireApiKey, async (req: Requ
   const targetSocket = socket || io; // fallback to broadcast if socket not found
 
   try {
-    const result = await orchestrate(prompt, targetSocket);
+    const result = await orchestrate(prompt, targetSocket, maxFee);
     return res.json({ success: true, ...result });
   } catch (error: any) {
     logger.error("Orchestration error:", error);

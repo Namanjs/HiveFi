@@ -1,6 +1,7 @@
 import { Wallet, Activity, Palette, Unplug } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useWallet } from "../hooks/useWallet";
+import AnimatedBalance from "./AnimatedBalance";
 
 interface EarningsBarProps {
   walletBalances: { orchestrator: string; specialists: Record<string, string> };
@@ -47,7 +48,10 @@ export default function EarningsBar({
           </div>
           <div className="flex flex-col">
             <span className="text-[9px] text-[var(--color-text-secondary)] font-medium uppercase tracking-[0.15em]">Orchestrator</span>
-            <span className="text-sm font-mono font-semibold text-white drop-shadow-sm">{walletBalances.orchestrator} <span className="text-[10px] text-white/50">USDC</span></span>
+            <span className="text-sm font-mono font-semibold drop-shadow-sm">
+              <AnimatedBalance value={walletBalances.orchestrator} />{" "}
+              <span className="text-[10px] text-white/50">USDC</span>
+            </span>
           </div>
         </div>
 
@@ -57,8 +61,9 @@ export default function EarningsBar({
           </div>
           <div className="flex flex-col">
             <span className="text-[9px] text-[var(--color-text-secondary)] font-medium uppercase tracking-[0.15em]">Escrow</span>
-            <span className="text-sm font-mono font-semibold text-white drop-shadow-sm">
-              {totalSpecialistEarnings} <span className="text-[10px] text-white/50">USDC</span>
+            <span className="text-sm font-mono font-semibold drop-shadow-sm">
+              <AnimatedBalance value={totalSpecialistEarnings} />{" "}
+              <span className="text-[10px] text-white/50">USDC</span>
             </span>
           </div>
         </div>

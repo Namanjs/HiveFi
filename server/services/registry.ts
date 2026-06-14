@@ -16,7 +16,7 @@ export interface SpecialistInfo {
   slashCount: number;
 }
 
-export async function getSpecialistByNiche(niche: string): Promise<SpecialistInfo | null> {
+export async function getSpecialistByNiche(niche: string, maxFee?: number): Promise<SpecialistInfo | null> {
 
   const contract = getRegistryContract();
   if (!contract) throw new Error("Blockchain not initialized");
@@ -26,26 +26,34 @@ export async function getSpecialistByNiche(niche: string): Promise<SpecialistInf
 
   const endpoints = await readJSON<any>(endpointsPath, {});
 
-  // Prefer models that have an endpoint registered and sort by stakedAmount
+  // Prefer models that have an endpoint registered and filter by maxFee
   let availableModels = [];
   for (const model of models) {
     const idStr = model.id.toString();
+    const priceNum = parseFloat(ethers.formatUnits(model.pricePerQuery, 6));
     if (endpoints[idStr]) {
-      availableModels.push(model);
+      if (maxFee !== undefined && priceNum > maxFee) {
+        continue; // Skip if price exceeds maxFee
+      }
+      availableModels.push({ model, priceNum });
     }
   }
 
-  if (availableModels.length === 0) return null; // No model with endpoint
+  if (availableModels.length === 0) return null; // No model matches criteria
 
+  // Sort by price (lowest first), then by stakedAmount (highest first)
   availableModels.sort((a, b) => {
-    const stakeA = a.stakedAmount;
-    const stakeB = b.stakedAmount;
+    if (a.priceNum < b.priceNum) return -1;
+    if (a.priceNum > b.priceNum) return 1;
+    
+    const stakeA = a.model.stakedAmount;
+    const stakeB = b.model.stakedAmount;
     if (stakeA > stakeB) return -1;
     if (stakeA < stakeB) return 1;
     return 0;
   });
 
-  const bestModel = availableModels[0];
+  const bestModel = availableModels[0].model;
   const idStr = bestModel.id.toString();
   return {
     id: idStr,

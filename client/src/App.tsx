@@ -26,8 +26,9 @@ export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [events, setEvents] = useState<LogEvent[]>([]);
   const [executionStep, setExecutionStep] = useState<string | null>(null);
-  const [walletBalances, setWalletBalances] = useState<{ orchestrator: string; specialists: Record<string, string> }>({ orchestrator: "1.00", specialists: {} });
+  const [walletBalances, setWalletBalances] = useState<{ orchestrator: string; specialists: Record<string, string> }>({ orchestrator: "1000.00", specialists: {} });
   const [activeSpecialists, setActiveSpecialists] = useState<string[]>([]);
+  const [currentExecutingNiche, setCurrentExecutingNiche] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [completedTask, setCompletedTask] = useState<{ modelId: string; taskId: string; niche: string } | null>(null);
   const [showAbstraction, setShowAbstraction] = useState<boolean>(false);
@@ -75,6 +76,12 @@ export default function App() {
 
     socket.on("STATUS_UPDATE", (payload: any) => {
       setExecutionStep(payload.status);
+
+      if (payload.niche) {
+        if (payload.status === "EXECUTING_SPECIALIST" || payload.status === "EVALUATING_RESULT" || payload.status === "CHAIN_STEP") {
+          setCurrentExecutingNiche(String(payload.niche).toUpperCase());
+        }
+      }
 
       let logMsg = "";
       switch (payload.status) {
@@ -152,11 +159,11 @@ export default function App() {
     setCompletedTask(null);
   };
 
-  const handleSendMessage = async (promptText: string) => {
+  const handleSendMessage = async (promptText: string, maxFee?: number) => {
     setIsLoading(true);
     setExecutionStep(null);
-    setEvents([]);
     setActiveSpecialists([]);
+    setCurrentExecutingNiche(null);
     
     abortControllerRef.current = new AbortController();
 
@@ -169,7 +176,7 @@ export default function App() {
           "Content-Type": "application/json",
           "x-api-key": "hivefi-dev-key-local"
         },
-        body: JSON.stringify({ prompt: promptText, socketId }),
+        body: JSON.stringify({ prompt: promptText, socketId, maxFee }),
         signal: abortControllerRef.current?.signal
       });
 
@@ -219,7 +226,7 @@ export default function App() {
       />
 
       <main 
-        className={`flex-1 min-w-0 grid grid-cols-1 p-4 md:p-6 overflow-y-auto lg:overflow-hidden transition-all duration-500 smooth-spring ${
+        className={`flex-1 min-h-0 min-w-0 grid grid-cols-1 p-4 md:p-6 overflow-hidden transition-all duration-500 smooth-spring ${
           showAbstraction 
             ? isFullScreen 
               ? "lg:grid-cols-[0px_1fr] gap-0" 
@@ -227,29 +234,32 @@ export default function App() {
             : "lg:grid-cols-[1fr_0px] gap-0"
         }`}
       >
-        <div className={`transition-all duration-500 smooth-spring flex flex-col h-full w-full overflow-hidden min-w-0 ${
+        <div className={`transition-all duration-500 smooth-spring flex flex-col h-full min-h-0 w-full overflow-hidden min-w-0 ${
           isFullScreen && showAbstraction ? "hidden lg:flex lg:w-0 lg:opacity-0" : "opacity-100"
         }`}>
             <ChatPanel
               messages={messages}
               onSendMessage={handleSendMessage}
               isLoading={isLoading}
+              executionStep={executionStep}
+              currentNiche={currentExecutingNiche}
               ratingPrompt={completedTask}
               onRate={handleRate}
               onCancel={handleCancelRequest}
             />
         </div>
 
-        <div className={`flex flex-col gap-6 transition-all duration-300 ease-out min-w-0 ${
-            showAbstraction ? "opacity-100 h-[600px] lg:h-full mt-6 lg:mt-0" : "opacity-0 h-0 lg:h-auto"
+        <div className={`flex flex-col gap-6 transition-all duration-500 smooth-spring min-h-0 min-w-0 ${
+            showAbstraction ? "opacity-100 h-[600px] lg:h-full mt-6 lg:mt-0" : "opacity-0 h-0 lg:h-auto pointer-events-none"
           }`}>
-            <div className={`transition-all duration-300 ease-out min-h-0 ${
+            <div className={`transition-all duration-500 smooth-spring min-h-0 overflow-hidden ${
               activePanel === "log" ? "h-[60px] shrink-0" : "flex-1"
             }`}>
               <ErrorBoundary>
               <SwarmCanvas 
                 executionStep={executionStep} 
                 activeSpecialists={activeSpecialists}
+                currentExecutingNiche={currentExecutingNiche}
                 mode={activePanel === "log" ? "minimized" : isFullScreen && activePanel === "swarm" ? "fullscreen" : activePanel === "swarm" ? "enlarged" : "normal"}
                 onToggleEnlarge={() => {
                   if (activePanel === "swarm" && !isFullScreen) setActivePanel(null);
@@ -263,7 +273,7 @@ export default function App() {
             </ErrorBoundary>
             </div>
             
-            <div className={`transition-all duration-300 ease-out min-h-0 ${
+            <div className={`transition-all duration-500 smooth-spring min-h-0 overflow-hidden ${
               activePanel === "swarm" ? "h-[60px] shrink-0" : activePanel === "log" ? "flex-1" : "h-[300px] shrink-0"
             }`}>
             <LogFeed 

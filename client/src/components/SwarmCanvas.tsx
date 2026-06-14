@@ -17,6 +17,7 @@ interface CustomNodeData extends Record<string, unknown> {
 interface SwarmCanvasProps {
   executionStep: string | null;
   activeSpecialists: string[];
+  currentExecutingNiche?: string | null;
   mode?: "normal" | "enlarged" | "fullscreen" | "minimized";
   onToggleEnlarge?: () => void;
   onToggleFullScreen?: () => void;
@@ -156,7 +157,7 @@ function FlowFitter({
   return null;
 }
 
-export default function SwarmCanvas({ executionStep, activeSpecialists, mode = "normal", onToggleEnlarge, onToggleFullScreen }: SwarmCanvasProps) {
+export default function SwarmCanvas({ executionStep, activeSpecialists, currentExecutingNiche = null, mode = "normal", onToggleEnlarge, onToggleFullScreen }: SwarmCanvasProps) {
   const [particleAnimation, setParticleAnimation] = useState<"escrow" | "release" | "refund" | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -263,13 +264,15 @@ export default function SwarmCanvas({ executionStep, activeSpecialists, mode = "
   }, [activeSpecialists, baseNodes, baseEdges, setNodes, setEdges]);
 
   useEffect(() => {
+    const executingNiche = currentExecutingNiche || activeSpecialists[activeSpecialists.length - 1] || null;
+
     setNodes((nds) =>
       nds.map((node) => {
         let isActive = false;
         let status: "normal" | "success" | "fail" | "offline" = "normal";
 
         if (node.id === "orchestrator") {
-          isActive = ["ANALYZING_INTENT", "ESCROW_TX_PENDING", "EVALUATING_RESULT", "DIRECT_RESPONSE"].includes(executionStep || "");
+          isActive = ["ANALYZING_INTENT", "CHAIN_STEP", "ESCROW_TX_PENDING", "EVALUATING_RESULT", "DIRECT_RESPONSE"].includes(executionStep || "");
           if (executionStep === "DIRECT_RESPONSE") status = "success";
         } else if (node.id === "blockchain") {
           isActive = ["ESCROW_LOCKED", "SETTLEMENT_TX_PENDING", "FUNDS_RELEASED", "TASK_REJECTED"].includes(executionStep || "");
@@ -277,10 +280,11 @@ export default function SwarmCanvas({ executionStep, activeSpecialists, mode = "
           if (executionStep === "TASK_REJECTED") status = "fail";
         } else if (node.id.startsWith("specialist-")) {
           const niche = node.id.replace("specialist-", "");
-          isActive = ["EXECUTING_SPECIALIST", "EVALUATING_RESULT"].includes(executionStep || "") 
-            && activeSpecialists[activeSpecialists.length - 1] === niche;
-            
-          if (executionStep === "SPECIALIST_UNAVAILABLE" && activeSpecialists[activeSpecialists.length - 1] === niche) {
+          isActive =
+            ["EXECUTING_SPECIALIST", "EVALUATING_RESULT"].includes(executionStep || "") &&
+            executingNiche === niche;
+
+          if (executionStep === "SPECIALIST_UNAVAILABLE" && executingNiche === niche) {
             isActive = true;
             status = "offline";
           }
@@ -303,7 +307,7 @@ export default function SwarmCanvas({ executionStep, activeSpecialists, mode = "
           successGlow = executionStep === "TASK_REJECTED";
         } else if (edge.id.startsWith("edge-bc-spec-")) {
           const niche = edge.id.replace("edge-bc-spec-", "");
-          const isCurrent = activeSpecialists[activeSpecialists.length - 1] === niche;
+          const isCurrent = executingNiche === niche;
           isGlowing = ["EXECUTING_SPECIALIST", "SETTLEMENT_TX_PENDING"].includes(executionStep || "") && isCurrent;
           successGlow = executionStep === "FUNDS_RELEASED" && isCurrent;
         }
@@ -314,7 +318,7 @@ export default function SwarmCanvas({ executionStep, activeSpecialists, mode = "
         };
       })
     );
-  }, [executionStep, activeSpecialists, setNodes, setEdges]);
+  }, [executionStep, activeSpecialists, currentExecutingNiche, setNodes, setEdges]);
 
   const particlePaths = {
     escrow: { start: { x: "300px", y: "115px" }, end: { x: "300px", y: "155px" } },
@@ -328,9 +332,9 @@ export default function SwarmCanvas({ executionStep, activeSpecialists, mode = "
   const isEnlarged = mode === "enlarged" || mode === "fullscreen";
 
   return (
-    <div className="relative w-full h-full rounded-3xl border border-white/10 bg-black/60 backdrop-blur-3xl shadow-[0_8px_32px_rgba(0,0,0,0.5)] overflow-hidden group transition-all duration-500 flex flex-col">
+    <div className="relative w-full h-full rounded-3xl border border-white/10 bg-black/60 backdrop-blur-3xl shadow-[0_10px_28px_-14px_rgba(0,0,0,0.55)] overflow-hidden group transition-all duration-500 flex flex-col">
       {/* Top Glow Line */}
-      <div className={`absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[var(--color-accent)] to-transparent transition-opacity duration-500 z-50 ${isEnlarged ? "opacity-100 shadow-[0_0_15px_var(--color-accent)]" : "opacity-0"}`} />
+      <div className={`absolute top-0 left-0 w-full h-px bg-linear-to-r from-transparent via-(--color-accent) to-transparent transition-opacity duration-500 z-50 ${isEnlarged ? "opacity-100 shadow-[0_0_15px_var(--color-accent)]" : "opacity-30"}`} />
 
       {/* Decorative Grid Overlay */}
       <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:40px_40px] [mask-image:radial-gradient(ellipse_60%_60%_at_50%_50%,#000_70%,transparent_100%)] pointer-events-none" />

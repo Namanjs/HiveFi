@@ -14,7 +14,8 @@ export interface OrchestrationResult {
 
 async function orchestrateChain(
   chain: { niche: string; sub_prompt: string }[],
-  socket: Socket | any
+  socket: Socket | any,
+  maxFee?: number
 ): Promise<OrchestrationResult> {
   const chainResults: { niche: string; modelName: string; output: string; price: string }[] = [];
   let previousOutput = "";
@@ -22,8 +23,8 @@ async function orchestrateChain(
   for (let i = 0; i < chain.length; i++) {
     const step = chain[i];
     const niche = step.niche.toUpperCase();
-    const specialist = await registry.getSpecialistByNiche(niche);
-    if (!specialist) throw new Error(`No specialist for niche: ${niche}`);
+    const specialist = await registry.getSpecialistByNiche(niche, maxFee);
+    if (!specialist) throw new Error(`No specialist for niche: ${niche} within budget`);
 
     // Emit chain step indicator
     socket.emit("STATUS_UPDATE", {
@@ -102,7 +103,7 @@ async function orchestrateChain(
   };
 }
 
-export async function orchestrate(prompt: string, socket: Socket | any): Promise<OrchestrationResult> {
+export async function orchestrate(prompt: string, socket: Socket | any, maxFee?: number): Promise<OrchestrationResult> {
 
   // 1. Emit ANALYZING_INTENT
   socket.emit("STATUS_UPDATE", { status: "ANALYZING_INTENT" });
@@ -112,7 +113,7 @@ export async function orchestrate(prompt: string, socket: Socket | any): Promise
 
   // If chain detected
   if (intent.chain && intent.chain.length > 0) {
-    return await orchestrateChain(intent.chain, socket);
+    return await orchestrateChain(intent.chain, socket, maxFee);
   }
 
   if (!intent.delegate || !intent.niche || !intent.sub_prompt) {
@@ -129,10 +130,10 @@ export async function orchestrate(prompt: string, socket: Socket | any): Promise
 
   // Branch B: Delegation Path
   const niche = intent.niche.toUpperCase();
-  const specialist = await registry.getSpecialistByNiche(niche);
+  const specialist = await registry.getSpecialistByNiche(niche, maxFee);
 
   if (!specialist) {
-    throw new Error(`No registered specialized AI found for niche: ${niche}`);
+    throw new Error(`No registered specialized AI found for niche: ${niche} within budget`);
   }
 
   // Health Check

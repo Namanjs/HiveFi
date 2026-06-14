@@ -1,9 +1,95 @@
-import { useState, useRef, useEffect, FormEvent } from "react";
-import { Send } from "lucide-react";
+import { useState, useRef, useEffect, FormEvent, useMemo } from "react";
+import { Send, Square, ArrowDown, Copy, Check, Hexagon } from "lucide-react";
+import HowSwarmWorksModal from "./HowSwarmWorksModal";
+import ExecutionStrip from "./ExecutionStrip";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
+
+const CodeBlockRenderer = ({ node, className, children, ...props }: any) => {
+  const match = /language-(\w+)/.exec(className || '');
+  const [copied, setCopied] = useState(false);
+  
+  const handleCopy = () => {
+    navigator.clipboard.writeText(String(children).replace(/\n$/, ''));
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return match ? (
+    <div className="rounded-xl overflow-hidden bg-[#0d0d0f] border border-white/5 shadow-xl max-w-full my-5 group/code">
+      <div className="bg-white/2 px-4 py-2 text-xs text-white/40 border-b border-white/5 font-mono uppercase tracking-wider flex items-center justify-between">
+        <span>{match[1]}</span>
+        <button onClick={handleCopy} className="text-white/40 hover:text-white transition-colors flex items-center gap-1.5 cursor-pointer">
+          {copied ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
+          <span>{copied ? "Copied" : "Copy code"}</span>
+        </button>
+      </div>
+      <div className="overflow-x-auto max-w-full scrollbar-thin [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-thumb]:rounded-full">
+        <SyntaxHighlighter
+          {...props}
+          style={vscDarkPlus}
+          language={match[1]}
+          PreTag="div"
+          customStyle={{ 
+            margin: 0, 
+            padding: '16px', 
+            fontSize: '13px', 
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace', 
+            background: 'transparent', 
+            minWidth: '100%', 
+            lineHeight: '1.5' 
+          }}
+        >
+          {String(children).replace(/\n$/, '')}
+        </SyntaxHighlighter>
+      </div>
+    </div>
+  ) : (
+    <code className="bg-(--color-accent)/15 text-(--color-accent) px-1.5 py-0.5 rounded-md font-mono text-[13px] border border-(--color-accent)/20 wrap-break-word" {...props}>
+      {children}
+    </code>
+  );
+};
+
+const MessageCopyButton = ({ text }: { text: string }) => {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = () => {
+    navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+  return (
+    <button onClick={handleCopy} className="flex items-center gap-1.5 text-xs text-white/40 hover:text-(--color-accent) transition-colors cursor-pointer mt-2 py-1 px-2 rounded-md hover:bg-white/5">
+      {copied ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
+      <span className="font-medium">{copied ? "Copied" : "Copy"}</span>
+    </button>
+  );
+};
+
+const MarkdownComponents = {
+  code: CodeBlockRenderer,
+  p: ({ children }: any) => <p className="mb-4 last:mb-0 leading-[1.75] text-white/90 whitespace-pre-wrap">{children}</p>,
+  h1: ({ children }: any) => <h1 className="text-2xl font-bold mt-8 mb-4 text-white tracking-tight font-sans">{children}</h1>,
+  h2: ({ children }: any) => <h2 className="text-xl font-semibold mt-8 mb-4 text-white tracking-tight font-sans">{children}</h2>,
+  h3: ({ children }: any) => <h3 className="text-lg font-semibold mt-6 mb-3 text-white tracking-tight font-sans">{children}</h3>,
+  ul: ({ children }: any) => <ul className="list-disc pl-5 mb-4 space-y-2 text-white/90 marker:text-(--color-accent)">{children}</ul>,
+  ol: ({ children }: any) => <ol className="list-decimal pl-5 mb-4 space-y-2 text-white/90 marker:text-(--color-accent)">{children}</ol>,
+  li: ({ children }: any) => <li className="leading-[1.75] pl-1">{children}</li>,
+  blockquote: ({ children }: any) => <blockquote className="border-l-4 border-(--color-accent) pl-4 py-1 my-5 bg-linear-to-r from-(--color-accent)/10 to-transparent rounded-r-lg italic text-white/80">{children}</blockquote>,
+  a: ({ href, children }: any) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-(--color-accent) hover:underline underline-offset-4 decoration-white/30 hover:decoration-(--color-accent) transition-all font-medium">{children}</a>,
+  table: ({ children }: any) => <div className="overflow-x-auto my-6 border border-white/10 rounded-xl"><table className="min-w-full divide-y divide-white/10 text-sm">{children}</table></div>,
+  thead: ({ children }: any) => <thead className="bg-[#1a1a1c]">{children}</thead>,
+  tbody: ({ children }: any) => <tbody className="divide-y divide-white/10">{children}</tbody>,
+  tr: ({ children }: any) => <tr className="hover:bg-white/2 transition-colors">{children}</tr>,
+  th: ({ children }: any) => <th className="px-5 py-3.5 text-left font-semibold text-white/90 tracking-wide">{children}</th>,
+  td: ({ children }: any) => <td className="px-5 py-3.5 text-white/80">{children}</td>,
+  hr: () => <hr className="border-white/10 my-8" />,
+  strong: ({ children }: any) => <strong className="font-semibold text-white">{children}</strong>,
+  em: ({ children }: any) => <em className="italic text-white/90">{children}</em>,
+  pre: ({ children }: any) => <>{children}</>
+};
 
 function StreamingMessage({ content, isTyping, onComplete }: { content: string, isTyping?: boolean, onComplete?: () => void }) {
   const [displayed, setDisplayed] = useState("");
@@ -27,36 +113,10 @@ function StreamingMessage({ content, isTyping, onComplete }: { content: string, 
   }, [content, isTyping, onComplete]);
 
   return (
-    <div className="markdown-prose space-y-2 text-sm break-words min-w-0 max-w-full overflow-hidden">
+    <div className="w-full min-w-0 max-w-full text-[15px]">
       <ReactMarkdown 
         remarkPlugins={[remarkGfm]}
-        components={{
-          code: ({node, className, children, ...props}: any) => {
-            const match = /language-(\w+)/.exec(className || '')
-            return match ? (
-              <div className="rounded-md overflow-hidden my-3 border border-white/10 shadow-lg max-w-full">
-                <div className="bg-[#1e1e1e] px-4 py-1.5 text-xs text-white/50 border-b border-white/5 font-mono uppercase tracking-wider flex items-center justify-between">
-                  <span>{match[1]}</span>
-                </div>
-                <div className="overflow-x-auto max-w-full">
-                  <SyntaxHighlighter
-                    {...props}
-                    style={vscDarkPlus}
-                    language={match[1]}
-                    PreTag="div"
-                    customStyle={{ margin: 0, padding: '16px', fontSize: '13px', background: '#0a0a0c', minWidth: '100%' }}
-                  >
-                    {String(children).replace(/\n$/, '')}
-                  </SyntaxHighlighter>
-                </div>
-              </div>
-            ) : (
-              <code className="bg-black/40 px-1.5 py-0.5 rounded text-[#a78bfa] font-mono text-[13px] break-all" {...props}>
-                {children}
-              </code>
-            )
-          }
-        }}
+        components={MarkdownComponents as any}
       >
         {displayed}
       </ReactMarkdown>
@@ -71,21 +131,69 @@ interface Message {
 
 interface ChatPanelProps {
   messages: Message[];
-  onSendMessage: (promptText: string) => void;
+  onSendMessage: (promptText: string, maxFee?: number) => void;
   isLoading: boolean;
+  executionStep?: string | null;
+  currentNiche?: string | null;
   ratingPrompt?: { modelId: string; taskId: string; niche: string } | null;
   onRate?: (score: number) => void;
   onCancel?: () => void;
 }
 
-export default function ChatPanel({ messages, onSendMessage, isLoading, ratingPrompt, onRate, onCancel }: ChatPanelProps) {
+export default function ChatPanel({ messages, onSendMessage, isLoading, executionStep = null, currentNiche = null, ratingPrompt, onRate, onCancel }: ChatPanelProps) {
   const [input, setInput] = useState("");
+  const [maxFee, setMaxFee] = useState<number>(0.05);
+  const [showHowItWorks, setShowHowItWorks] = useState(false);
+  const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [activeStreamIndex, setActiveStreamIndex] = useState<number | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  const handleScroll = () => {
+    if (!scrollContainerRef.current) return;
+    const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
+    setShowScrollBottom(scrollHeight - scrollTop - clientHeight > 100);
+  };
+
+  const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior });
+  };
+
+  const suggestedPrompts = useMemo(() => {
+    const allPrompts = [
+      { title: "Explain a Concept", text: "Explain quantum computing to me like I am 5 years old using a simple analogy." },
+      { title: "Python Script", text: "Write a simple Python script to read a CSV file and print the total number of rows." },
+      { title: "Draft an Email", text: "Write a professional email to my team announcing that our new product launch is delayed by two weeks." },
+      { title: "React Component", text: "Build a modern, responsive button component in React using Tailwind CSS." },
+      { title: "Fix my Code", text: "I have a Javascript function that is throwing a 'TypeError: undefined is not an object'. How do I fix this?" },
+      { title: "Creative Writing", text: "Write a short sci-fi story about an astronaut who discovers a glowing door on the moon." },
+      { title: "SQL Query", text: "Write a SQL query to find the top 5 customers who spent the most money last month." },
+      { title: "Brainstorm Ideas", text: "Give me 10 creative marketing ideas to promote a new coffee shop in a busy city." },
+      { title: "Translation", text: "Translate the phrase 'Welcome to the future of decentralized AI' into Spanish, French, and Japanese." }
+    ];
+    return allPrompts.sort(() => 0.5 - Math.random()).slice(0, 3);
+  }, []);
+
+  const welcomeMessage = useMemo(() => {
+    const messages = [
+      "Welcome, Amigo 👋",
+      "Ready to build, Commander?",
+      "Swarm online. Awaiting orders.",
+      "Hello there, Architect.",
+      "Systems nominal. What's next?",
+      "Greetings, Pioneer.",
+      "The Hive is listening..."
+    ];
+    return messages[Math.floor(Math.random() * messages.length)];
+  }, []);
+
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
   }, [messages, isLoading, activeStreamIndex]);
 
   useEffect(() => {
@@ -98,70 +206,86 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, ratingPr
 
   const isExecutionActive = isLoading || activeStreamIndex !== null;
 
+  const showExecutionStrip =
+    isLoading ||
+    (executionStep != null &&
+      !["FUNDS_RELEASED", "DIRECT_RESPONSE", "TASK_REJECTED", "ERROR"].includes(executionStep));
+
   const handleSubmit = (e?: FormEvent) => {
     if (e) e.preventDefault();
     if (!input.trim() || isLoading) return;
-    onSendMessage(input);
+    onSendMessage(input, maxFee);
     setInput("");
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
     }
   };
 
-  const [welcomeMessage, setWelcomeMessage] = useState("What's next?");
-  
-  useEffect(() => {
-    const messages = [
-      "Welcome, Amigo 👋",
-      "Ready to build, Commander?",
-      "Swarm online. Awaiting orders.",
-      "Hello there, Architect.",
-      "Systems nominal. What's next?",
-      "Greetings, Pioneer.",
-      "The Hive is listening..."
-    ];
-    setWelcomeMessage(messages[Math.floor(Math.random() * messages.length)]);
-  }, []);
-
   return (
     <div className="flex flex-col h-full w-full overflow-hidden relative min-w-0">
       
       {/* Messages Area */}
-      <div className={`flex-1 overflow-y-auto px-4 py-8 space-y-6 scroll-smooth min-w-0 ${messages.length === 0 ? "hidden" : "block"}`}>
+      <div 
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        tabIndex={0}
+        role="log"
+        aria-live="polite"
+        aria-relevant="additions"
+        aria-label="Chat messages"
+        className={`chat-scroll flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-4 py-8 pr-2 space-y-6 scroll-smooth min-w-0 ${messages.length === 0 ? "hidden" : "block"}`}
+      >
         {messages.map((m, idx) => (
-          <div key={idx} className={`flex flex-col ${m.sender === "user" ? "items-end" : "items-start"}`}>
-            <span className="text-[10px] font-mono text-[#666] mb-1.5 uppercase">
-              {m.sender === "user" ? "User" : "System"}
-            </span>
-            <div
-              className={`max-w-[85%] min-w-0 overflow-hidden p-3 text-sm leading-relaxed ${
-                m.sender === "user"
-                  ? "bg-white/10 text-white shadow-md border border-white/10 rounded-2xl rounded-br-sm"
-                  : "bg-gradient-to-r from-[var(--color-accent)]/10 to-transparent border-l-2 border-l-[var(--color-accent)] border-y border-y-white/5 border-r border-r-white/5 text-[var(--color-text-primary)] rounded-r-lg"
-              }`}
-            >
-              {m.sender === "assistant" ? (
-                <StreamingMessage 
-                  content={m.text} 
-                  isTyping={activeStreamIndex === idx}
-                  onComplete={() => {
-                    if (activeStreamIndex === idx) setActiveStreamIndex(null);
-                  }}
-                />
-              ) : (
-                <div className="whitespace-pre-wrap">{m.text}</div>
-              )}
-            </div>
+          <div key={idx} className={`flex w-full group/msg ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
+            {m.sender === "user" ? (
+              <div className="max-w-[85%] bg-[#1e1e20] text-white border border-white/10 rounded-3xl rounded-br-sm px-5 py-3.5 text-[15px] leading-relaxed shadow-lg whitespace-pre-wrap">
+                {m.text}
+              </div>
+            ) : (
+              <div className="max-w-full w-full flex gap-5">
+                {/* Assistant Avatar */}
+                <div className="w-8 h-8 rounded-full bg-linear-to-br from-(--color-accent) to-(--color-secondary-accent) shrink-0 flex items-center justify-center shadow-lg border border-white/10 mt-0.5">
+                   <span className="text-white font-bold text-sm tracking-tighter">H</span>
+                </div>
+                {/* Assistant Content */}
+                <div className="flex-1 min-w-0 flex flex-col items-start max-w-[calc(100%-3rem)]">
+                  <div className="font-semibold text-white mb-2 text-[15px]">HiveFi</div>
+                  <StreamingMessage 
+                    content={m.text} 
+                    isTyping={activeStreamIndex === idx}
+                    onComplete={() => {
+                      if (activeStreamIndex === idx) setActiveStreamIndex(null);
+                    }}
+                  />
+                  {activeStreamIndex !== idx && (
+                    <div className="opacity-0 group-hover/msg:opacity-100 transition-opacity">
+                      <MessageCopyButton text={m.text} />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         ))}
 
         {isLoading && (
-          <div className="flex flex-col items-start">
-            <span className="text-[10px] font-mono text-[#666] mb-1.5 uppercase">System</span>
-            <div className="w-48 p-3 rounded-md bg-[#111] border border-[#222] space-y-2">
-              <div className="h-1.5 bg-[#333] animate-shimmer rounded-full w-full"></div>
-              <div className="h-1.5 bg-[#333] animate-shimmer rounded-full w-3/4"></div>
-            </div>
+          <div className="flex w-full justify-start gap-5 animate-in fade-in duration-300">
+             <div className="w-8 h-8 rounded-full bg-linear-to-br from-(--color-accent) to-(--color-secondary-accent) shrink-0 flex items-center justify-center shadow-lg border border-white/10 mt-0.5">
+                 <span className="text-white font-bold text-sm tracking-tighter">H</span>
+              </div>
+              <div className="flex-1 min-w-0 flex flex-col items-start gap-3">
+                <div className="font-semibold text-white text-[15px]">HiveFi</div>
+                {showExecutionStrip && (
+                  <ExecutionStrip executionStep={executionStep} currentNiche={currentNiche} />
+                )}
+                {!showExecutionStrip && (
+                  <div className="flex items-center gap-1.5 h-6">
+                    <div className="w-2.5 h-2.5 rounded-full bg-(--color-accent)/80 animate-bounce [animation-delay:0ms]"></div>
+                    <div className="w-2.5 h-2.5 rounded-full bg-(--color-accent)/80 animate-bounce [animation-delay:150ms]"></div>
+                    <div className="w-2.5 h-2.5 rounded-full bg-(--color-accent)/80 animate-bounce [animation-delay:300ms]"></div>
+                  </div>
+                )}
+              </div>
           </div>
         )}
 
@@ -187,21 +311,64 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, ratingPr
         <div ref={messagesEndRef} />
       </div>
 
+      {/* Scroll to Bottom Button */}
+      {showScrollBottom && (
+        <button
+          type="button"
+          onClick={() => scrollToBottom("smooth")}
+          aria-label="Scroll to latest messages"
+          title="Scroll to latest messages"
+          className="absolute bottom-32 right-1/2 translate-x-1/2 flex items-center gap-2 px-4 py-2 bg-white/10 backdrop-blur-md border border-white/20 text-white text-sm font-medium rounded-full hover:bg-white/20 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--color-accent) focus-visible:ring-offset-2 focus-visible:ring-offset-[#131314] transition-all shadow-lg z-50 animate-fade-in"
+        >
+          <ArrowDown size={18} aria-hidden="true" />
+          <span>Latest</span>
+        </button>
+      )}
+
       {/* Empty State / Center Screen */}
       {messages.length === 0 && (
-        <div className="flex-1 flex flex-col items-center justify-center -mt-20">
-          <h1 className="text-4xl md:text-5xl font-medium tracking-tight mb-12 text-transparent bg-clip-text bg-gradient-to-r from-white via-white/80 to-white/40 text-center pb-2">
+        <div className="flex-1 flex flex-col items-center justify-center -mt-10 px-4">
+          <h1 className="text-4xl md:text-5xl font-medium tracking-tight mb-10 text-transparent bg-clip-text bg-linear-to-r from-white via-white/80 to-white/40 text-center pb-2 drop-shadow-sm">
             {welcomeMessage}
           </h1>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 w-full max-w-4xl">
+            {suggestedPrompts.map((prompt, idx) => (
+              <button
+                key={idx}
+                onClick={() => {
+                  setInput(prompt.text);
+                  if (textareaRef.current) {
+                    textareaRef.current.value = prompt.text;
+                    textareaRef.current.style.height = "auto";
+                    textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+                  }
+                }}
+                className="group flex flex-col text-left bg-white/5 hover:bg-white/10 border border-white/5 hover:border-(--color-accent)/50 p-5 rounded-2xl transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_20px_rgba(0,0,0,0.2)]"
+              >
+                <h3 className="text-white/90 font-semibold mb-2 group-hover:text-(--color-accent) transition-colors">{prompt.title}</h3>
+                <p className="text-white/40 text-xs leading-relaxed group-hover:text-white/60 transition-colors line-clamp-2">{prompt.text}</p>
+              </button>
+            ))}
+          </div>
+          <button 
+            type="button"
+            onClick={() => setShowHowItWorks(true)}
+            className="mt-12 text-sm font-medium text-white/40 hover:text-(--color-accent) flex items-center gap-2.5 transition-all border border-white/10 hover:border-(--color-accent)/40 rounded-full px-5 py-2.5 bg-white/5 hover:bg-(--color-accent)/10 backdrop-blur-sm"
+          >
+            <Hexagon size={16} className="text-(--color-accent)/70" />
+            How does the Swarm work?
+          </button>
         </div>
       )}
 
+      <HowSwarmWorksModal open={showHowItWorks} onClose={() => setShowHowItWorks(false)} />
+
       {/* Input Area (Bottom Fixed or Centered if empty) */}
-      <div className={`p-4 w-full max-w-3xl mx-auto transition-all duration-500 ease-in-out ${messages.length === 0 ? "absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 mt-10" : ""}`}>
+      <div className={`p-4 w-full max-w-3xl mx-auto transition-all duration-500 ease-in-out ${messages.length === 0 ? "mt-4" : ""}`}>
         <form onSubmit={handleSubmit} className="flex gap-3 relative group w-full">
           <textarea
             ref={textareaRef}
-            className="flex-1 bg-[#1a1a1c]/80 backdrop-blur-xl border border-white/10 rounded-3xl px-8 py-5 pr-16 text-base text-white placeholder-white/40 focus:outline-none focus:border-[var(--color-accent)]/50 focus:ring-1 focus:ring-[var(--color-accent)]/50 focus:shadow-[0_0_30px_rgba(139,92,246,0.15)] transition-all shadow-[0_4px_20px_rgba(0,0,0,0.5)] resize-none overflow-y-auto min-h-[64px] max-h-[200px]"
+            className="flex-1 bg-[#1a1a1c]/80 backdrop-blur-xl border border-white/10 rounded-3xl px-8 py-5 pr-16 text-base text-white placeholder-white/40 focus:outline-none focus:border-(--color-accent)/50 focus:ring-1 focus:ring-(--color-accent)/50 focus:shadow-[0_0_30px_rgba(139,92,246,0.15)] transition-all shadow-[0_4px_20px_rgba(0,0,0,0.5)] resize-none overflow-y-auto min-h-[64px] max-h-[200px] scrollbar-none [&::-webkit-scrollbar]:hidden"
             placeholder="Enter command..."
             value={input}
             onChange={(e) => {
@@ -226,24 +393,66 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, ratingPr
                 if (activeStreamIndex !== null) setActiveStreamIndex(null);
               }
             }}
+            aria-label={isExecutionActive ? "Stop response" : "Send message"}
+            title={isExecutionActive ? "Stop response" : "Send message"}
             className={`absolute right-3 top-1/2 -translate-y-1/2 p-3 rounded-full transition-all duration-300 flex items-center justify-center ${
               isExecutionActive 
                 ? "bg-white/10 text-white hover:bg-red-500/80 cursor-pointer" 
                 : !input.trim() 
                   ? "bg-white/5 text-white/30 cursor-not-allowed" 
-                  : "bg-[var(--color-accent)] text-white hover:scale-105 cursor-pointer shadow-[0_0_15px_var(--color-accent)]"
+                  : "bg-(--color-accent) text-white hover:scale-105 cursor-pointer shadow-[0_0_15px_var(--color-accent)]"
             }`}
             disabled={!isExecutionActive && !input.trim()}
           >
             {isExecutionActive ? (
-              <div className="w-3.5 h-3.5 bg-white rounded-[2px]" />
+              <Square size={18} className="fill-current" />
             ) : (
               <Send size={18} className={input.trim() ? "translate-x-0.5" : ""} />
             )}
           </button>
         </form>
-        <div className="text-center mt-3 text-xs text-white/50 font-medium">
-          HiveFi Swarm Orchestrator may make mistakes. Verify critical actions.
+        <div className="flex items-center justify-between mt-3 px-4">
+          <div className="flex items-center gap-2 text-xs text-white/40 font-medium hover:text-white/70 transition-colors group/fee">
+            <span>Max Fee:</span>
+            <div className="flex items-center gap-1 bg-black/20 rounded-md px-1 py-0.5 border border-white/5 group-hover/fee:border-white/20 transition-colors">
+              <button 
+                type="button"
+                onClick={() => setMaxFee(prev => Math.max(0.001, parseFloat((prev - 0.01).toFixed(3))))}
+                aria-label="Decrease maximum fee"
+                title="Decrease maximum fee"
+                className="text-white/40 hover:text-(--color-accent) hover:bg-(--color-accent)/10 w-5 h-5 flex items-center justify-center rounded transition-colors pb-0.5"
+              >
+                -
+              </button>
+              <input 
+                type="number" 
+                step="0.001"
+                min="0.001"
+                max="50"
+                value={maxFee}
+                id="max-fee-input"
+                aria-label="Maximum fee in USDC"
+                title="Maximum fee in USDC"
+                size={Math.max(4, maxFee.toString().length + 1)}
+                onChange={(e) => setMaxFee(parseFloat(e.target.value) || 0)}
+                onBlur={(e) => setMaxFee(Math.min(50, Math.max(0.001, parseFloat(e.target.value) || 0.001)))}
+                className="fee-input bg-transparent text-white text-center outline-none font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none min-w-[32px] max-w-[100px]"
+              />
+              <button 
+                type="button"
+                onClick={() => setMaxFee(prev => parseFloat((prev + 0.01).toFixed(3)))}
+                aria-label="Increase maximum fee"
+                title="Increase maximum fee"
+                className="text-white/40 hover:text-(--color-accent) hover:bg-(--color-accent)/10 w-5 h-5 flex items-center justify-center rounded transition-colors pb-0.5"
+              >
+                +
+              </button>
+            </div>
+            <span>USDC</span>
+          </div>
+          <div className="text-xs text-white/30 font-medium">
+            HiveFi Orchestrator may make mistakes. Verify transactions.
+          </div>
         </div>
       </div>
     </div>
