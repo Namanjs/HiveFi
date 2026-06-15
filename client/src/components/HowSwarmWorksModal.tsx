@@ -71,7 +71,10 @@ function VisualPrompt() {
           className="flex flex-col items-center gap-3 max-w-[240px]"
         >
           <div className="relative w-full px-5 py-4 rounded-2xl border border-white/15 bg-[#222224]/80 shadow-[0_8px_32px_rgba(0,0,0,0.35)] backdrop-blur-sm">
-            <div className="absolute -top-2.5 left-4 px-2 py-0.5 rounded-md bg-(--color-accent)/20 border border-(--color-accent)/30 text-[10px] font-mono text-(--color-accent) uppercase tracking-wider">
+            <div 
+              className="absolute -top-2.5 left-4 px-2 py-0.5 rounded-md border border-(--color-accent)/30 text-[10px] font-mono text-(--color-accent) uppercase tracking-wider"
+              style={{ background: "color-mix(in srgb, var(--color-accent) 15%, #18181a)" }}
+            >
               prompt
             </div>
             <p className="text-sm text-white/75 leading-relaxed pt-1">
@@ -231,7 +234,6 @@ function VisualRoute() {
             style={{
               left: `${(node.cx / w) * 100}%`,
               top: `${(node.cy / h) * 100}%`,
-              animationDelay: `${node.delay}s`,
             }}
           >
             <div
@@ -342,7 +344,7 @@ function VisualDone() {
         transition={{ delay: 0.25 }}
         className="text-sm text-white/45 text-center max-w-sm leading-relaxed"
       >
-        Enable <span className="text-white/75 font-medium">Show Swarm</span> in the header to watch nodes light up as each step runs.
+        Toggle <span className="text-white/75 font-medium">Show Swarm</span> in the header to visualize real-time network routing and node execution.
       </motion.p>
     </div>
   );
@@ -351,26 +353,26 @@ function VisualDone() {
 const CARDS = [
   {
     step: "Step 1",
-    title: "You bring the idea",
-    body: "Write what you need — a query, a component, a script. HiveFi doesn't try to do everything itself. It treats your prompt as a job to delegate.",
+    title: "Define the intent",
+    body: "Submit your request, whether it's a database query, a React component, or a Python script. Instead of relying on a single monolithic model, HiveFi treats your prompt as a precise computational job to be delegated to the network.",
     Visual: VisualPrompt,
   },
   {
     step: "Step 2",
-    title: "The orchestrator picks who handles it",
-    body: "Like a project manager, it reads your request and routes it to a specialist node — SQL, Python, frontend, or a chain of them if the task spans multiple skills.",
+    title: "Intelligent delegation",
+    body: "The Orchestrator node parses your intent and dynamically routes the payload to the most capable Specialist node in the Swarm, such as a dedicated SQL, Python, or Frontend agent, ensuring expert-level execution.",
     Visual: VisualRoute,
   },
   {
     step: "Step 3",
-    title: "Payment waits until the work checks out",
-    body: "USDC locks in escrow before anything runs. The specialist does the task, the output gets verified, and only then does money move. Bad result? You get refunded.",
+    title: "Cryptographic escrow & execution",
+    body: "A micro-transaction locks USDC in an on-chain smart contract before execution begins. The Specialist processes the task and the output is verified. If the execution fails or invalid results are detected, your funds are safely refunded.",
     Visual: VisualEscrow,
   },
   {
     step: "Step 4",
-    title: "HiveFi hands you the result",
-    body: "You get the finished output back in chat. The specialist earns their fee on-chain. Everyone only wins when the work is actually good.",
+    title: "Verified output & settlement",
+    body: "The validated result is streamed back to your interface for immediate use. Simultaneously, the smart contract unlocks and transfers the escrowed funds to the Specialist. A trustless, decentralized exchange of AI computation and value.",
     Visual: VisualDone,
   },
 ];
@@ -515,7 +517,7 @@ export default function HowSwarmWorksModal({ open, onClose }: HowSwarmWorksModal
                 onClick={onClose}
                 className="px-7 py-2.5 rounded-full text-sm font-semibold text-white bg-linear-to-r from-(--color-accent) to-(--color-secondary-accent) hover:opacity-90 transition-opacity shadow-[0_0_20px_color-mix(in_srgb,var(--color-accent)_35%,transparent)]"
               >
-                Got it — let&apos;s go
+                Got it, let&apos;s go
               </button>
             ) : (
               <button
