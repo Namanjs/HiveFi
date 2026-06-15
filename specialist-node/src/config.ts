@@ -15,6 +15,8 @@ export interface Config {
   HF_TIMEOUT_MS: number;
   SYSTEM_PROMPT?: string;
   AUTH_SECRET: string;
+  BASE_RPC_URL: string;
+  HIVE_REGISTRY_ADDRESS: string;
 }
 
 const requiredEnvVars = ['MODEL_ID', 'NICHE', 'WALLET', 'PRICE_PER_QUERY', 'BACKEND', 'AUTH_SECRET'];
@@ -59,6 +61,8 @@ export function loadConfig(): Config {
     HF_TIMEOUT_MS: parseInt(process.env.HF_TIMEOUT_MS || '60000', 10),
     SYSTEM_PROMPT: process.env.SYSTEM_PROMPT,
     AUTH_SECRET: process.env.AUTH_SECRET!,
+    BASE_RPC_URL: process.env.BASE_RPC_URL || 'http://127.0.0.1:8545',
+    HIVE_REGISTRY_ADDRESS: process.env.HIVE_REGISTRY_ADDRESS || '',
   };
 }
 

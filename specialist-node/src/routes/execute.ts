@@ -2,8 +2,12 @@ import { Router, Request, Response, NextFunction } from 'express';
 import { config } from '../config';
 import { generateOllama } from '../models/ollama';
 import { generateHuggingface } from '../models/huggingface';
+import { verifyTaskEscrow, initializeBlockchain } from '../blockchain';
 
 const router = Router();
+
+// Initialize blockchain when the router is loaded
+initializeBlockchain().catch(console.error);
 
 router.get('/health', (req: Request, res: Response) => {
   res.json({
@@ -17,7 +21,7 @@ router.get('/health', (req: Request, res: Response) => {
 
 router.post('/execute', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { prompt, niche, context } = req.body;
+    const { prompt, niche, context, taskId } = req.body;
 
     if (!prompt) {
       return res.status(400).json({ error: 'Missing required field: prompt', code: 'BAD_REQUEST' });
@@ -32,6 +36,18 @@ router.post('/execute', async (req: Request, res: Response, next: NextFunction) 
         error: `Niche mismatch. This node handles ${config.NICHE}, but received request for ${niche}`,
         code: 'NICHE_MISMATCH'
       });
+    }
+
+    if (taskId) {
+      const isValid = await verifyTaskEscrow(taskId, config.WALLET, prompt);
+      if (!isValid) {
+        return res.status(402).json({
+          error: `Payment Required. Task escrow verification failed on-chain. Cannot execute.`,
+          code: 'PAYMENT_REQUIRED'
+        });
+      }
+    } else {
+      console.warn("No taskId provided! Generating response without escrow verification (dev mode?).");
     }
 
     const fullPrompt = context ? `${context}\n\n${prompt}` : prompt;
