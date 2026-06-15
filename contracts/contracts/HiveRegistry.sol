@@ -17,6 +17,7 @@ contract HiveRegistry is ReentrancyGuard, Pausable {
     enum Status { Pending, Approved, Rejected, TimeoutClaimed }
 
     struct Task {
+        address client;
         address orchestrator;
         address specialist;
         uint256 modelId;
@@ -55,7 +56,7 @@ contract HiveRegistry is ReentrancyGuard, Pausable {
     // Events
     event ModelRegistered(uint256 indexed modelId, string name, string indexed niche, uint256 pricePerQuery, address wallet);
     event ModelUpdated(uint256 indexed modelId, string name, uint256 pricePerQuery);
-    event TaskRequested(uint256 indexed taskId, address indexed orchestrator, address indexed specialist, uint256 amount, bytes32 promptHash);
+    event TaskRequested(uint256 indexed taskId, address indexed client, address indexed orchestrator, address specialist, uint256 amount, bytes32 promptHash);
     event TaskApproved(uint256 indexed taskId, bytes32 resultHash);
     event TaskRejected(uint256 indexed taskId);
     event TaskTimedOut(uint256 indexed taskId);
@@ -217,16 +218,19 @@ contract HiveRegistry is ReentrancyGuard, Pausable {
 
     // Escrow Functions
     function requestTask(
+        address client,
         address specialist,
         uint256 modelId,
         uint256 amount,
         bytes32 promptHash
     ) external nonReentrant whenNotPaused returns (uint256) {
+        require(client != address(0), "Invalid client address");
         require(specialist != address(0), "Invalid specialist address");
         require(amount > 0, "Amount must be greater than zero");
 
         uint256 taskId = nextTaskId++;
         tasks[taskId] = Task({
+            client: client,
             orchestrator: msg.sender,
             specialist: specialist,
             modelId: modelId,
@@ -238,10 +242,10 @@ contract HiveRegistry is ReentrancyGuard, Pausable {
         });
         modelPendingTasks[modelId] += 1;
 
-        // Transfer USDC from orchestrator to this contract escrow
-        require(usdcToken.transferFrom(msg.sender, address(this), amount), "USDC transfer failed");
+        // Transfer USDC from client to this contract escrow
+        require(usdcToken.transferFrom(client, address(this), amount), "USDC transfer failed");
 
-        emit TaskRequested(taskId, msg.sender, specialist, amount, promptHash);
+        emit TaskRequested(taskId, client, msg.sender, specialist, amount, promptHash);
         return taskId;
     }
 
@@ -269,8 +273,8 @@ contract HiveRegistry is ReentrancyGuard, Pausable {
         task.status = Status.Rejected;
         modelPendingTasks[task.modelId] -= 1;
 
-        // Refund USDC to orchestrator
-        require(usdcToken.transfer(task.orchestrator, task.amount), "USDC refund to orchestrator failed");
+        // Refund USDC to client
+        require(usdcToken.transfer(task.client, task.amount), "USDC refund to client failed");
 
         // Internal slash logic
         _slashModel(task.modelId);
