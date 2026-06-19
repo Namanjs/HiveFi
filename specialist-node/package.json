@@ -4,11 +4,12 @@
   "description": "Reference implementation for a HiveFi specialist node",
   "main": "dist/index.js",
   "scripts": {
-    "start": "ts-node src/index.ts",
+    "start": "node dist/index.js",
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
     "build": "tsc"
   },
   "dependencies": {
+    "@huggingface/inference": "^4.13.19",
     "dotenv": "^16.6.1",
     "ethers": "^6.16.0",
     "express": "^4.19.2",

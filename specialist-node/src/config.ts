@@ -5,8 +5,8 @@ dotenv.config();
 export interface Config {
   MODEL_ID: string;
   NICHE: string;
-  WALLET: string;
-  PRICE_PER_QUERY: string;
+  SPECIALIST_PRIVATE_KEY: string;
+  PRICE_PER_TOKEN: string;
   BACKEND: 'ollama' | 'huggingface';
   OLLAMA_BASE_URL: string;
   HUGGINGFACE_API_KEY: string;
@@ -19,7 +19,7 @@ export interface Config {
   HIVE_REGISTRY_ADDRESS: string;
 }
 
-const requiredEnvVars = ['MODEL_ID', 'NICHE', 'WALLET', 'PRICE_PER_QUERY', 'BACKEND', 'AUTH_SECRET'];
+const requiredEnvVars = ['MODEL_ID', 'NICHE', 'SPECIALIST_PRIVATE_KEY', 'PRICE_PER_TOKEN', 'BACKEND', 'AUTH_SECRET'];
 
 export function loadConfig(): Config {
   const missing: string[] = [];
@@ -51,8 +51,8 @@ export function loadConfig(): Config {
   return {
     MODEL_ID: process.env.MODEL_ID!,
     NICHE: process.env.NICHE!,
-    WALLET: process.env.WALLET!,
-    PRICE_PER_QUERY: process.env.PRICE_PER_QUERY!,
+    SPECIALIST_PRIVATE_KEY: process.env.SPECIALIST_PRIVATE_KEY!,
+    PRICE_PER_TOKEN: process.env.PRICE_PER_TOKEN!,
     BACKEND: backend as 'ollama' | 'huggingface',
     OLLAMA_BASE_URL: process.env.OLLAMA_BASE_URL || 'http://localhost:11434',
     HUGGINGFACE_API_KEY: process.env.HUGGINGFACE_API_KEY || '',
