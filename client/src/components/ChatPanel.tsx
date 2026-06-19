@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, FormEvent, useMemo } from "react";
 import { Send, Square, ArrowDown, Copy, Check, Hexagon } from "lucide-react";
 import HowSwarmWorksModal from "./HowSwarmWorksModal";
+import { DropdownMenu } from "./DropdownMenu";
+import { IntentAnalysisMessage } from "./IntentAnalysisMessage";
 import ExecutionStrip from "./ExecutionStrip";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -138,17 +140,76 @@ interface ChatPanelProps {
   ratingPrompt?: { modelId: string; taskId: string; niche: string } | null;
   onRate?: (score: number) => void;
   onCancel?: () => void;
+  pendingIntent?: any;
+  onExecutePrompt?: (nicheModels: Record<string, string>, maxFee?: number) => void;
 }
 
-export default function ChatPanel({ messages, onSendMessage, isLoading, executionStep = null, currentNiche = null, ratingPrompt, onRate, onCancel }: ChatPanelProps) {
+export default function ChatPanel({ messages, onSendMessage, isLoading, executionStep = null, currentNiche = null, ratingPrompt, onRate, onCancel, pendingIntent, onExecutePrompt }: ChatPanelProps) {
   const [input, setInput] = useState("");
-  const [maxFee, setMaxFee] = useState<number>(0.05);
+  const [maxFee, setMaxFee] = useState<number>(() => {
+    return parseFloat(localStorage.getItem("max_fee") || "2.00");
+  });
   const [showHowItWorks, setShowHowItWorks] = useState(false);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
   const [activeStreamIndex, setActiveStreamIndex] = useState<number | null>(null);
+  const [availableModels, setAvailableModels] = useState<any[]>([]);
+  const [selectedModels, setSelectedModels] = useState<Record<string, string>>({});
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/registry`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.specialists) {
+          // Filter duplicates, keeping only the latest version of each model name
+          const uniqueModels = new Map();
+          data.specialists.forEach((m: any) => {
+            uniqueModels.set(m.name, m);
+          });
+          setAvailableModels(Array.from(uniqueModels.values()));
+        }
+      })
+      .catch(console.error);
+      
+    // Listen for cross-component storage updates (like from SettingsModal)
+    const handleStorageChange = () => {
+      const stored = parseFloat(localStorage.getItem("max_fee") || "2.00");
+      setMaxFee((prev) => {
+        if (prev !== stored) return stored;
+        return prev;
+      });
+    };
+    window.addEventListener("local-storage-update", handleStorageChange);
+    return () => window.removeEventListener("local-storage-update", handleStorageChange);
+  }, []);
+
+  // Sync maxFee out to localStorage when user changes it from terminal
+  useEffect(() => {
+    const currentStored = parseFloat(localStorage.getItem("max_fee") || "2.00");
+    if (maxFee !== currentStored && !isNaN(maxFee)) {
+      localStorage.setItem("max_fee", maxFee.toString());
+      window.dispatchEvent(new Event("local-storage-update"));
+    }
+  }, [maxFee]);
+
+  useEffect(() => {
+    if (pendingIntent && pendingIntent.chain) {
+      const newSelected: Record<string, string> = {};
+      pendingIntent.chain.forEach((step: any) => {
+        const niche = step.niche.toUpperCase();
+        if (!newSelected[niche]) {
+          const matchingModels = availableModels.filter(m => m.niche.toUpperCase() === niche);
+          if (matchingModels.length > 0) {
+            newSelected[niche] = matchingModels[0].id;
+          }
+        }
+      });
+      setSelectedModels(newSelected);
+    }
+  }, [pendingIntent, availableModels]);
 
   const handleScroll = () => {
     if (!scrollContainerRef.current) return;
@@ -206,10 +267,7 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, executio
 
   const isExecutionActive = isLoading || activeStreamIndex !== null;
 
-  const showExecutionStrip =
-    isLoading ||
-    (executionStep != null &&
-      !["FUNDS_RELEASED", "DIRECT_RESPONSE", "TASK_REJECTED", "ERROR"].includes(executionStep));
+  const showExecutionStrip = false;
 
   const handleSubmit = (e?: FormEvent) => {
     if (e) e.preventDefault();
@@ -308,6 +366,16 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, executio
           </div>
         )}
 
+        {pendingIntent && onExecutePrompt && !isLoading && (
+          <IntentAnalysisMessage
+            intent={pendingIntent}
+            availableModels={availableModels}
+            selectedModels={selectedModels}
+            onModelSelect={(niche, modelId) => setSelectedModels(prev => ({ ...prev, [niche]: modelId }))}
+            onExecute={() => onExecutePrompt(selectedModels, maxFee)}
+          />
+        )}
+
         <div ref={messagesEndRef} />
       </div>
 
@@ -365,6 +433,32 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, executio
 
       {/* Input Area (Bottom Fixed or Centered if empty) */}
       <div className={`p-4 w-full max-w-3xl mx-auto transition-all duration-500 ease-in-out ${messages.length === 0 ? "mt-4" : ""}`}>
+        
+        {/* Delegation Strategy Indicator */}
+        {localStorage.getItem("delegation_mode") === "manual" && (
+          <div className="mb-3 px-4 flex items-center justify-end">
+            <div className="relative group">
+              <select
+                value={localStorage.getItem("manual_model_id") || ""}
+                onChange={(e) => {
+                  localStorage.setItem("manual_model_id", e.target.value);
+                  // force re-render Hack
+                  setInput(input + " "); setTimeout(() => setInput(input), 0);
+                }}
+                className="bg-[#1a1a1c]/80 backdrop-blur-xl border border-white/20 rounded-2xl pl-4 pr-10 py-2.5 text-sm text-white font-medium focus:outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)]/50 appearance-none cursor-pointer transition-all shadow-[0_4px_15px_rgba(0,0,0,0.3)] hover:border-[var(--color-accent)]/70"
+              >
+                <option value="" disabled className="bg-[#121214]">Select a model...</option>
+                {availableModels.map(m => (
+                  <option key={m.id} value={m.id} className="bg-[#121214]">{m.name} ({m.niche}) - {m.pricePerQuery} USDC</option>
+                ))}
+              </select>
+              <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-4 text-[var(--color-accent)] group-hover:text-white transition-colors">
+                <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+              </div>
+            </div>
+          </div>
+        )}
+
         <form onSubmit={handleSubmit} className="flex gap-3 relative group w-full">
           <textarea
             ref={textareaRef}
