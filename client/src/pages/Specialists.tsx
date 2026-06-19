@@ -34,7 +34,12 @@ export default function Specialists() {
         const res = await fetch(`${API_BASE}/api/registry`);
         const data = await res.json();
         if (data.success && data.specialists) {
-          setSpecialists(data.specialists);
+          // Filter duplicates, keeping only the latest version of each model name
+          const uniqueModels = new Map();
+          data.specialists.forEach((m: any) => {
+            uniqueModels.set(m.name, m);
+          });
+          setSpecialists(Array.from(uniqueModels.values()));
         } else {
           setError(data.error || "Failed to load specialists");
         }

@@ -1,10 +1,26 @@
-import { useState, useRef, useEffect } from "react";
-import { Bot, Network, ChevronDown } from "lucide-react";
+import { useState, useRef, useEffect, useContext } from "react";
+import { Bot, Network, ChevronDown, Loader2 } from "lucide-react";
+import { WalletContext } from "../contexts/WalletContext";
+import { Contract, parseUnits } from "ethers";
+import { HIVE_REGISTRY_ADDRESS, MOCK_USDC_ADDRESS, HIVE_REGISTRY_ABI } from "../config/contracts";
+import MockUSDCABI from "../config/MockUSDC.json";
 
 interface SelectOption {
   value: string;
   label: string;
 }
+
+const formatError = (err: any) => {
+  if (err?.code === "ACTION_REJECTED") return "Transaction was rejected by the user.";
+  if (err?.message?.includes("insufficient funds")) return "Insufficient Sepolia ETH for gas fees.";
+  if (err?.message?.includes("Faucet cooldown active")) return "You already claimed your test USDC from the faucet recently.";
+  if (err?.message) {
+    const msg = err.message;
+    if (msg.length > 80) return msg.substring(0, 80) + "...";
+    return msg;
+  }
+  return "An unexpected error occurred.";
+};
 
 interface CustomSelectProps {
   options: SelectOption[];
@@ -91,33 +107,166 @@ function CustomSelect({ options, value, onChange, placeholder }: CustomSelectPro
 
 export default function Deploy() {
   const [activeTab, setActiveTab] = useState<"deploy" | "manage">("deploy");
+  const wallet = useContext(WalletContext);
   
   // Form State
+  const [agentName, setAgentName] = useState("");
   const [niche, setNiche] = useState("");
-  const [model, setModel] = useState("gpt4");
-  const [customModelUrl, setCustomModelUrl] = useState("");
+  const [customNiche, setCustomNiche] = useState("");
+  const [baseFee, setBaseFee] = useState("0.0001");
+  const [endpointUrl, setEndpointUrl] = useState("");
   const [selectedExistingAgent, setSelectedExistingAgent] = useState("");
 
+  const [isDeploying, setIsDeploying] = useState(false);
+  const [deployStep, setDeployStep] = useState("");
+  const [deployError, setDeployError] = useState("");
+  const [deploySuccess, setDeploySuccess] = useState(false);
+
   const nicheOptions = [
-    { value: "code", label: "Code Generation" },
-    { value: "data", label: "Data Analysis" },
-    { value: "design", label: "UI/UX Design" },
-    { value: "security", label: "Smart Contract Audit" },
-    { value: "defi", label: "DeFi Operations" },
+    { value: "FRONTEND", label: "Frontend Engineer" },
+    { value: "BACKEND", label: "Backend Engineer" },
+    { value: "DESIGN", label: "UI/UX Designer" },
+    { value: "SECURITY", label: "Smart Contract Audit" },
+    { value: "DEFI", label: "DeFi Operations" },
     { value: "custom", label: "Custom Niche..." },
   ];
 
-  const modelOptions = [
-    { value: "gpt4", label: "GPT-4o" },
-    { value: "claude", label: "Claude 3.5 Sonnet" },
-    { value: "llama3", label: "Llama 3 70B" },
-    { value: "custom", label: "Custom Model (HuggingFace / API)" },
-  ];
+  const [existingAgents, setExistingAgents] = useState<{value: string, label: string}[]>([]);
 
-  const existingAgents = [
-    { value: "agent_123", label: "SQL Specialist (Deployed)" },
-    { value: "agent_456", label: "Frontend Engineer (Deployed)" }
-  ];
+  useEffect(() => {
+    if (wallet?.address && activeTab === "manage") {
+      fetch(`${import.meta.env.VITE_API_BASE}/api/dashboard/${wallet.address}`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success && data.models) {
+            // Filter duplicates, keeping only the latest version of each model name
+            const uniqueModels = new Map();
+            data.models.forEach((m: any) => {
+              uniqueModels.set(m.name, m); // Overwrites older versions with the same name
+            });
+            const filteredModels = Array.from(uniqueModels.values());
+
+            setExistingAgents(filteredModels.map((m: any) => ({
+              value: m.id,
+              label: `${m.name} (${m.niche})`
+            })));
+            if (filteredModels.length > 0) {
+              setSelectedExistingAgent(filteredModels[0].id);
+            }
+          }
+        })
+        .catch(console.error);
+    }
+  }, [wallet?.address, activeTab]);
+
+  const handleDeploy = async () => {
+    if (!wallet?.signer || !wallet?.address) {
+      setDeployError("Please connect your wallet first");
+      return;
+    }
+
+    if (!agentName || !baseFee || !endpointUrl) {
+      setDeployError("Please fill out all required fields (Name, Base Fee, Endpoint URL)");
+      return;
+    }
+
+    try {
+      setIsDeploying(true);
+      setDeployError("");
+      setDeploySuccess(false);
+
+      const registry = new Contract(HIVE_REGISTRY_ADDRESS, (HIVE_REGISTRY_ABI as any).abi || HIVE_REGISTRY_ABI, wallet.signer);
+      const usdc = new Contract(MOCK_USDC_ADDRESS, MockUSDCABI.abi || MockUSDCABI, wallet.signer);
+
+      const finalNiche = niche === "custom" ? customNiche : niche;
+      const parsedFee = parseUnits(baseFee, 6); // USDC has 6 decimals
+      const maxPrice = parseUnits("1000", 6); // Max price allowed
+      const stakeAmount = parseUnits("10", 6); // 10 USDC stake required
+
+      // 1. Get next model ID
+      setDeployStep("Reading blockchain state...");
+      const modelId = await registry.nextModelId();
+
+      // 2. Register Model
+      setDeployStep("Please confirm 'Register Model' transaction in your wallet...");
+      const tx1 = await registry.registerModel(agentName, finalNiche, maxPrice);
+      await tx1.wait();
+
+      // 3. Get Test USDC from Faucet
+      setDeployStep("Please confirm 'Claim Test USDC' transaction in your wallet...");
+      try {
+        const tx2 = await usdc.faucet();
+        await tx2.wait();
+      } catch (faucetErr: any) {
+        console.warn("Faucet skipped (likely cooldown):", faucetErr.message);
+        // We continue because they probably already have USDC from a previous attempt
+      }
+
+      // 4. Approve USDC
+      setDeployStep("Please confirm 'Approve USDC' transaction in your wallet...");
+      const tx3 = await usdc.approve(HIVE_REGISTRY_ADDRESS, stakeAmount);
+      await tx3.wait();
+
+      // 5. Register Provider
+      setDeployStep(`Please confirm 'Register Provider' for Model ID ${modelId.toString()}...`);
+      const tx4 = await registry.registerProvider(modelId, endpointUrl, parsedFee, stakeAmount);
+      const receipt = await tx4.wait();
+
+      // 6. Notify Backend
+      setDeployStep("Notifying HiveFi Orchestrator...");
+      
+      // Extract Provider ID from ProviderRegistered event logs
+      // Event: ProviderRegistered(uint256 indexed providerId, uint256 indexed modelId, address wallet, string endpoint, uint256 pricePerToken)
+      let actualProviderId = modelId;
+      for (const log of receipt.logs) {
+        try {
+          const parsed = registry.interface.parseLog(log);
+          if (parsed && parsed.name === 'ProviderRegistered') {
+            actualProviderId = parsed.args[0]; // providerId
+            break;
+          }
+        } catch (e) {
+          // ignore parsing errors for irrelevant logs
+        }
+      }
+
+      // Auto-format the URL if it's missing the protocol
+      let formattedUrl = endpointUrl.trim();
+      if (!formattedUrl.startsWith("http://") && !formattedUrl.startsWith("https://")) {
+        formattedUrl = "https://" + formattedUrl;
+      }
+
+      const response = await fetch(`${import.meta.env.VITE_API_BASE}/api/registry/register-endpoint`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          modelId: Number(modelId),
+          providerId: Number(actualProviderId),
+          endpointUrl: formattedUrl
+        })
+      });
+
+      if (!response.ok) {
+        let errorDetails = "";
+        try {
+          const body = await response.json();
+          errorDetails = body.error || JSON.stringify(body);
+        } catch {
+          errorDetails = response.statusText;
+        }
+        throw new Error(`Failed to register endpoint with orchestrator: ${response.status} ${errorDetails}`);
+      }
+
+      setDeploySuccess(true);
+      setDeployStep("Deployed Successfully!");
+
+    } catch (err: any) {
+      console.error(err);
+      setDeployError(formatError(err));
+    } finally {
+      setIsDeploying(false);
+    }
+  };
 
   return (
     <div className="w-full h-full p-8 overflow-y-auto pb-32">
@@ -182,7 +331,7 @@ export default function Deploy() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-3">
                   <label className="ml-1 text-xs font-mono text-[#888] uppercase tracking-wider">Agent Name</label>
-                  <input type="text" placeholder="e.g. Rust Systems Expert" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[var(--color-accent)] focus:bg-white/10 transition-colors" />
+                  <input value={agentName} onChange={e => setAgentName(e.target.value)} type="text" placeholder="e.g. Qwen Frontend Specialist" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[var(--color-accent)] focus:bg-white/10 transition-colors" />
                 </div>
                 <div className="space-y-3">
                   <label className="ml-1 text-xs font-mono text-[#888] uppercase tracking-wider">Specialty Niche</label>
@@ -193,7 +342,7 @@ export default function Deploy() {
                     placeholder="Select Niche..." 
                   />
                   {niche === "custom" && (
-                     <input type="text" placeholder="Enter custom niche label" className="w-full mt-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[var(--color-accent)] transition-colors animate-[slide-down_0.3s_ease-out]" />
+                     <input value={customNiche} onChange={e => setCustomNiche(e.target.value)} type="text" placeholder="Enter custom niche label" className="w-full mt-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[var(--color-accent)] transition-colors animate-[slide-down_0.3s_ease-out]" />
                   )}
                 </div>
               </div>
@@ -209,51 +358,59 @@ export default function Deploy() {
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="space-y-3">
-                  <label className="ml-1 text-xs font-mono text-[#888] uppercase tracking-wider">Base Model</label>
-                  <CustomSelect 
-                    options={modelOptions} 
-                    value={model} 
-                    onChange={setModel} 
-                  />
-                  {model === "custom" && (
-                     <input 
-                      type="text" 
-                      placeholder="e.g. meta-llama/Llama-2-7b-chat-hf" 
-                      value={customModelUrl}
-                      onChange={(e) => setCustomModelUrl(e.target.value)}
-                      className="w-full mt-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white font-mono text-sm focus:outline-none focus:border-[var(--color-accent)] transition-colors animate-[slide-down_0.3s_ease-out]" 
-                    />
-                  )}
+                  <label className="ml-1 text-xs font-mono text-[#888] uppercase tracking-wider">Railway Endpoint URL (Provider)</label>
+                  <input value={endpointUrl} onChange={e => setEndpointUrl(e.target.value)} type="text" placeholder="e.g. https://specialist-models-production.up.railway.app" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[var(--color-accent)] focus:bg-white/10 transition-colors" />
                 </div>
                 <div className="space-y-3">
                   <label className="ml-1 text-xs font-mono text-[#888] uppercase tracking-wider">Base Fee (USDC)</label>
                   <div className="relative">
-                    <input type="number" step="0.01" placeholder="0.05" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white font-mono focus:outline-none focus:border-[var(--color-accent)] focus:bg-white/10 transition-colors pl-10" />
+                    <input value={baseFee} onChange={e => setBaseFee(e.target.value)} type="number" step="0.0001" placeholder="0.0001" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white font-mono focus:outline-none focus:border-[var(--color-accent)] focus:bg-white/10 transition-colors pl-10" />
                     <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[#888] font-mono">$</span>
                   </div>
                 </div>
               </div>
-              
-              <div className="space-y-3">
-                <label className="ml-1 text-xs font-mono text-[#888] uppercase tracking-wider">System Prompt Instructions</label>
-                <textarea rows={4} placeholder="Describe how this agent should behave and execute tasks..." className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[var(--color-accent)] focus:bg-white/10 transition-colors resize-none"></textarea>
-              </div>
             </div>
 
+            {deployError && (
+              <div className="p-4 bg-red-500/20 border border-red-500/50 rounded-xl text-red-200 text-sm">
+                {deployError}
+              </div>
+            )}
+            
+            {deploySuccess && (
+              <div className="p-4 bg-green-500/20 border border-green-500/50 rounded-xl text-green-200 text-sm">
+                Deployment and Registration Successful!
+              </div>
+            )}
+
             <div className="pt-6">
-              <button type="button" className="w-full relative group bg-white text-black font-bold py-4 rounded-xl overflow-hidden hover:scale-[1.02] transition-transform smooth-spring shadow-[0_0_20px_rgba(255,255,255,0.2)]">
-                <div className="absolute inset-0 bg-gradient-to-r from-[var(--color-accent)] to-[var(--color-secondary-accent)] opacity-0 group-hover:opacity-10 transition-opacity" />
-                <span className="relative z-10 flex items-center justify-center gap-2">
-                  {activeTab === "deploy" ? "Deploy Agent to Swarm" : "Update Agent Parameters"}
-                </span>
-              </button>
+              {activeTab === "deploy" && (
+                <button 
+                  onClick={handleDeploy}
+                  disabled={isDeploying}
+                  type="button" 
+                  className={`w-full relative group font-bold py-4 rounded-xl overflow-hidden hover:scale-[1.02] transition-transform smooth-spring shadow-[0_0_20px_rgba(255,255,255,0.2)] ${isDeploying ? 'bg-white/50 text-black/50 cursor-not-allowed' : 'bg-white text-black'}`}
+                >
+                  <div className="absolute inset-0 bg-gradient-to-r from-[var(--color-accent)] to-[var(--color-secondary-accent)] opacity-0 group-hover:opacity-10 transition-opacity" />
+                  <span className="relative z-10 flex items-center justify-center gap-2">
+                    {isDeploying ? (
+                      <>
+                        <Loader2 className="animate-spin" size={20} />
+                        {deployStep}
+                      </>
+                    ) : (
+                      "Deploy Agent to Swarm"
+                    )}
+                  </span>
+                </button>
+              )}
               
               <div className="flex items-center justify-center gap-2 mt-6">
                 <span className="text-sm font-mono text-[#888]">
                   {activeTab === "deploy" ? (
-                    <>Deployment requires a <span className="font-bold text-white">0.01 ETH</span> stake on Base Sepolia.</>
+                    <>Deployment requires a <span className="font-bold text-white">10 USDC</span> stake on Ethereum Sepolia.</>
                   ) : (
-                    <>Updates require a <span className="font-bold text-white">0.001 ETH</span> gas fee on Base Sepolia.</>
+                    <>Updates require a <span className="font-bold text-white">0.001 ETH</span> gas fee on Ethereum Sepolia.</>
                   )}
                 </span>
               </div>

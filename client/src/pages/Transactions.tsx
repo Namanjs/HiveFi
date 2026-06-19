@@ -146,7 +146,7 @@ export default function Transactions() {
                       </td>
                       <td className="p-6 text-right">
                         {tx.txHash ? (
-                          <a href={`https://sepolia.basescan.org/tx/${tx.txHash}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm font-mono text-[#888] hover:text-[var(--color-accent)] transition-colors">
+                          <a href={`https://sepolia.etherscan.io/tx/${tx.txHash}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm font-mono text-[#888] hover:text-[var(--color-accent)] transition-colors">
                             {tx.txHash.substring(0, 6)}...{tx.txHash.substring(tx.txHash.length - 4)}
                             <ExternalLink size={14} />
                           </a>
