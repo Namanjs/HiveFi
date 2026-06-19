@@ -1,13 +1,11 @@
 import { Link, useLocation } from "react-router-dom";
 import { Terminal, Cpu, FileText, Rocket, ChevronLeft, ChevronRight, Settings, Menu } from "lucide-react";
 import { useState } from "react";
-import SettingsModal from "./SettingsModal";
 
 export default function NavBar() {
   const location = useLocation();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isMobileOpen, setIsMobileOpen] = useState(false);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
 
   const navItem = (path: string, label: string, Icon: any) => {
     const isActive = location.pathname === path;
@@ -77,25 +75,17 @@ export default function NavBar() {
         {navItem("/specialists", "Specialists", Cpu)}
         {navItem("/transactions", "Transactions", FileText)}
         {navItem("/deploy", "Deploy", Rocket)}
+        {navItem("/settings", "Settings", Settings)}
       </div>
 
       {/* Status Footer */}
       <div className={`mt-auto pt-6 border-t border-white/5 flex items-center justify-between ${isCollapsed ? 'hidden' : 'block'}`}>
         <div className="font-mono text-xs text-[#aaa] space-y-2">
           <div>PROTOCOL V1.0.0</div>
-          <div>BASE SEPOLIA</div>
+          <div>ETHEREUM SEPOLIA</div>
         </div>
-        <button 
-          onClick={() => setIsSettingsOpen(true)}
-          className="p-2 rounded-xl text-[#888] hover:text-white hover:bg-white/10 transition-colors"
-          data-tooltip="Settings"
-        >
-          <Settings size={18} />
-        </button>
       </div>
     </nav>
-
-    <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
     </>
   );
 }

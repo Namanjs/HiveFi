@@ -4,23 +4,17 @@ import { useWallet } from "../hooks/useWallet";
 import AnimatedBalance from "./AnimatedBalance";
 
 interface EarningsBarProps {
-  walletBalances: { orchestrator: string; specialists: Record<string, string> };
   isConnected: boolean;
   showAbstraction: boolean;
   onToggleAbstraction: () => void;
 }
 
 export default function EarningsBar({
-  walletBalances,
   isConnected,
   showAbstraction,
   onToggleAbstraction,
 }: EarningsBarProps) {
   const { address, isConnected: isWalletConnected, isConnecting, connectWallet, disconnectWallet } = useWallet();
-
-  const totalSpecialistEarnings = Object.values(walletBalances.specialists || {})
-    .reduce((sum, bal) => sum + parseFloat(bal), 0)
-    .toFixed(2);
 
   const [theme, setTheme] = useState<string>(localStorage.getItem("theme") || "purple");
   const [showThemes, setShowThemes] = useState(false);
@@ -40,33 +34,8 @@ export default function EarningsBar({
   return (
     <header className="flex flex-wrap items-center justify-between gap-y-4 px-4 md:px-8 py-4 text-white w-full z-50">
 
-      {/* LEFT: Financials */}
+      {/* LEFT: Placeholder to push right items if needed, or empty */}
       <div className="flex items-center gap-2 md:gap-4">
-        <div className="flex items-center gap-3 bg-black/40 backdrop-blur-3xl px-4 py-2 rounded-2xl border border-white/10 shadow-[0_4px_20px_rgba(0,0,0,0.3)] hover:bg-white/5 transition-colors cursor-default">
-          <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
-            <Wallet size={14} style={{ color: "var(--color-secondary-accent)", filter: "drop-shadow(0 0 4px var(--color-secondary-accent))" }} />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[9px] text-[var(--color-text-secondary)] font-medium uppercase tracking-[0.15em]">Orchestrator</span>
-            <span className="text-sm font-mono font-semibold drop-shadow-sm">
-              <AnimatedBalance value={walletBalances.orchestrator} />{" "}
-              <span className="text-[10px] text-white/50">USDC</span>
-            </span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-3 bg-black/40 backdrop-blur-3xl px-4 py-2 rounded-2xl border border-white/10 shadow-[0_4px_20px_rgba(0,0,0,0.3)] hover:bg-white/5 transition-colors cursor-default">
-          <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center border border-white/10">
-            <Wallet size={14} style={{ color: "var(--color-accent)", filter: "drop-shadow(0 0 4px var(--color-accent))" }} />
-          </div>
-          <div className="flex flex-col">
-            <span className="text-[9px] text-[var(--color-text-secondary)] font-medium uppercase tracking-[0.15em]">Escrow</span>
-            <span className="text-sm font-mono font-semibold drop-shadow-sm">
-              <AnimatedBalance value={totalSpecialistEarnings} />{" "}
-              <span className="text-[10px] text-white/50">USDC</span>
-            </span>
-          </div>
-        </div>
       </div>
 
       {/* RIGHT: Controls */}

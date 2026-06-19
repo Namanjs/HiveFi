@@ -104,7 +104,7 @@ export default function LogFeed({ events, mode = "normal", onToggleEnlarge, onTo
                       </div>
                       {evt.txHash && (
                         <a
-                          href={evt.isMock ? "#" : `https://sepolia.basescan.org/tx/${evt.txHash}`}
+                          href={evt.isMock ? "#" : `https://sepolia.etherscan.io/tx/${evt.txHash}`}
                           target={evt.isMock ? "_self" : "_blank"}
                           rel="noopener noreferrer"
                           className="inline-flex items-center mt-1 text-(--color-secondary-accent) hover:text-white hover:underline transition-all bg-(--color-secondary-accent)/10 px-2 py-0.5 rounded"

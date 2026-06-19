@@ -333,7 +333,7 @@ function VisualDone() {
           <Wallet size={22} className="text-(--color-accent) shrink-0" />
           <div>
             <p className="text-sm font-semibold text-white/90">Specialist paid</p>
-            <p className="text-xs text-white/40 mt-0.5">On Base Sepolia</p>
+            <p className="text-xs text-white/40 mt-0.5">On Ethereum Sepolia</p>
           </div>
         </div>
       </motion.div>

@@ -177,50 +177,8 @@ export default function SwarmCanvas({ executionStep, activeSpecialists, currentE
     }
   }, [executionStep]);
 
-  const baseNodes: Node<CustomNodeData>[] = useMemo(() => [
-    {
-      id: "orchestrator",
-      type: "custom",
-      position: { x: 0, y: 0 },
-      data: {
-        label: "ORCHESTRATOR",
-        desc: "Task analysis & routing",
-        icon: Brain,
-        nodeType: "orchestrator",
-        isActive: false,
-        status: "normal",
-      },
-    },
-    {
-      id: "blockchain",
-      type: "custom",
-      position: { x: 0, y: 160 },
-      data: {
-        label: "BASE SEPOLIA",
-        desc: "L2 Escrow Contract",
-        icon: Server,
-        nodeType: "blockchain",
-        isActive: false,
-        status: "normal",
-        subDesc: "0xCf7E...F0Fc"
-      },
-    },
-  ], []);
-
-  const baseEdges: Edge[] = useMemo(() => [
-    {
-      id: "edge-orch-bc",
-      source: "orchestrator",
-      sourceHandle: "source-bottom",
-      target: "blockchain",
-      targetHandle: "target-top",
-      type: "default",
-      animated: false,
-    },
-  ], []);
-
-  const [nodes, setNodes] = useNodesState<Node<CustomNodeData>>(baseNodes);
-  const [edges, setEdges] = useEdgesState(baseEdges);
+  const [nodes, setNodes] = useNodesState<Node<CustomNodeData>>([]);
+  const [edges, setEdges] = useEdgesState([]);
 
   // Derive full nodes/edges when activeSpecialists changes
   useEffect(() => {
@@ -236,7 +194,7 @@ export default function SwarmCanvas({ executionStep, activeSpecialists, currentE
       return {
         id: `specialist-${niche}`,
         type: "custom",
-        position: { x, y: 290 },
+        position: { x, y: 160 }, // Moved up since there are no parent nodes above it
         data: {
           label: `${niche} SPECIALIST`,
           desc: `Fine-tuned ${niche.toLowerCase()} agent`,
@@ -249,19 +207,9 @@ export default function SwarmCanvas({ executionStep, activeSpecialists, currentE
       };
     });
 
-    const specialistEdges: Edge[] = activeSpecialists.map((niche) => ({
-      id: `edge-bc-spec-${niche}`,
-      source: "blockchain",
-      sourceHandle: "source-bottom",
-      target: `specialist-${niche}`,
-      targetHandle: "target-top",
-      type: "default",
-      animated: false,
-    }));
-
-    setNodes([...baseNodes, ...specialistNodes]);
-    setEdges([...baseEdges, ...specialistEdges]);
-  }, [activeSpecialists, baseNodes, baseEdges, setNodes, setEdges]);
+    setNodes(specialistNodes);
+    setEdges([]); // No edges needed since there's no central orchestrator node rendered
+  }, [activeSpecialists, setNodes, setEdges]);
 
   useEffect(() => {
     const executingNiche = currentExecutingNiche || activeSpecialists[activeSpecialists.length - 1] || null;
