@@ -127,11 +127,22 @@ export async function checkSpecialistHealth(endpoint: string): Promise<boolean> 
   }
 }
 
+export interface SpecialistResponse {
+  result: string;
+  model_id: string;
+  niche: string;
+  processing_time_ms: number;
+  tokens: number;
+  final_amount_base: string;
+  signature: string;
+  result_hash: string;
+}
+
 /**
  * Call Specialist Endpoint
  * Makes a real HTTP POST to the external specialist node for execution.
  */
-export async function callSpecialistEndpoint(endpoint: string, prompt: string, niche: string, context?: string): Promise<string> {
+export async function callSpecialistEndpoint(endpoint: string, prompt: string, niche: string, context?: string, taskId?: string, providerId?: string): Promise<SpecialistResponse> {
   const url = `${endpoint.replace(/\/$/, '')}/execute`;
   const timeoutMs = 90000; // 90 seconds timeout
 
@@ -145,7 +156,7 @@ export async function callSpecialistEndpoint(endpoint: string, prompt: string, n
         'Content-Type': 'application/json',
         'x-auth-secret': process.env.AUTH_SECRET || ''
       },
-      body: JSON.stringify({ prompt, niche, context }),
+      body: JSON.stringify({ prompt, niche, context, taskId, providerId }),
       signal: controller.signal
     });
 
@@ -166,7 +177,7 @@ export async function callSpecialistEndpoint(endpoint: string, prompt: string, n
       throw new Error("Specialist node returned a success status but no 'result' field in the payload.");
     }
     
-    return data.result;
+    return data as SpecialistResponse;
   } catch (error: any) {
     clearTimeout(timeoutId);
     

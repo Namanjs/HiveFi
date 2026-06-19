@@ -7,7 +7,8 @@ import { readJSON, atomicWriteJSON } from './fileUtils';
 const endpointsPath = path.join(__dirname, '../config/endpoints.json');
 
 export interface SpecialistInfo {
-  id: string;
+  id: string; // providerId
+  modelId: string;
   wallet: string;
   price: string;
   endpoint: string;
@@ -17,59 +18,89 @@ export interface SpecialistInfo {
 }
 
 export async function getSpecialistByNiche(niche: string, maxFee?: number): Promise<SpecialistInfo | null> {
-
   const contract = getRegistryContract();
   if (!contract) throw new Error("Blockchain not initialized");
 
-  const models = await contract.getModelsByNiche(niche.toUpperCase());
-  if (!models || models.length === 0) return null;
-
   const endpoints = await readJSON<any>(endpointsPath, {});
 
-  // Prefer models that have an endpoint registered and filter by maxFee
-  let availableModels = [];
-  for (const model of models) {
-    const idStr = model.id.toString();
-    const priceNum = parseFloat(ethers.formatUnits(model.pricePerQuery, 6));
-    if (endpoints[idStr]) {
-      if (maxFee !== undefined && priceNum > maxFee) {
-        continue; // Skip if price exceeds maxFee
+  let availableProviders = [];
+
+  const nextModelId = await contract.nextModelId();
+  for (let m = 0; m < Number(nextModelId); m++) {
+    const model = await contract.models(m);
+    if (!model.isActive || model.niche.toUpperCase() !== niche.toUpperCase()) continue;
+
+    const providers = await contract.getActiveProviders(m);
+    
+    for (const provider of providers) {
+      const idStr = provider.id.toString();
+      const priceNum = parseFloat(ethers.formatUnits(provider.pricePerToken, 6)); // Assuming pricePerToken maps to maxBudget here
+      
+      if (endpoints[idStr]) {
+        if (maxFee !== undefined && priceNum > maxFee) {
+          continue; // Skip if price exceeds maxFee
+        }
+        availableProviders.push({ model, provider, priceNum });
       }
-      availableModels.push({ model, priceNum });
     }
   }
 
-  if (availableModels.length === 0) return null; // No model matches criteria
+  if (availableProviders.length === 0) return null;
 
-  // Sort by price (lowest first), then by stakedAmount (highest first)
-  availableModels.sort((a, b) => {
-    if (a.priceNum < b.priceNum) return -1;
-    if (a.priceNum > b.priceNum) return 1;
-    
-    const stakeA = a.model.stakedAmount;
-    const stakeB = b.model.stakedAmount;
+  // Find the top 3 highest-staked providers
+  availableProviders.sort((a, b) => {
+    const stakeA = a.provider.stakedAmount;
+    const stakeB = b.provider.stakedAmount;
     if (stakeA > stakeB) return -1;
     if (stakeA < stakeB) return 1;
+    // Tie break on price
+    if (a.priceNum < b.priceNum) return -1;
+    if (a.priceNum > b.priceNum) return 1;
     return 0;
   });
 
-  const bestModel = availableModels[0].model;
-  const idStr = bestModel.id.toString();
+  const top3 = availableProviders.slice(0, 3);
+  
+  // Calculate Median Price of top 3
+  const prices = top3.map(p => p.priceNum).sort((a, b) => a - b);
+  const medianPriceNum = prices[Math.floor(prices.length / 2)];
+  
+  // Find a provider from top 3 that matches or is below median price
+  const best = top3.find(p => p.priceNum <= medianPriceNum) || top3[0];
+  
+  const idStr = best.provider.id.toString();
+  
   return {
     id: idStr,
-    wallet: bestModel.wallet,
-    price: ethers.formatUnits(bestModel.pricePerQuery, 6),
+    modelId: best.model.id.toString(),
+    wallet: best.provider.wallet,
+    price: ethers.formatUnits(best.provider.pricePerToken, 6), // In production, we'd set maxBudget = medianPrice. But here price acts as maxBudget.
     endpoint: endpoints[idStr],
-    modelName: bestModel.name,
-    stakedAmount: ethers.formatUnits(bestModel.stakedAmount, 6),
-    slashCount: Number(bestModel.slashCount)
+    modelName: best.model.name,
+    stakedAmount: ethers.formatUnits(best.provider.stakedAmount, 6),
+    slashCount: Number(best.provider.slashCount)
   };
 }
 
-
+export async function getSpecialistById(providerId: string): Promise<SpecialistInfo | null> {
+  const allSpecialists = await getAllSpecialists();
+  const spec = allSpecialists.find(s => s.id === providerId);
+  if (!spec) return null;
+  return {
+    id: spec.id,
+    modelId: spec.modelId,
+    wallet: spec.wallet,
+    price: spec.pricePerQuery,
+    endpoint: spec.endpoint || "",
+    modelName: spec.name,
+    stakedAmount: spec.stakedAmount,
+    slashCount: spec.slashCount
+  };
+}
 
 export interface SpecialistListItem {
-  id: string;
+  id: string; // providerId
+  modelId: string;
   name: string;
   niche: string;
   pricePerQuery: string;
@@ -89,36 +120,42 @@ export async function getAllSpecialists(healthStatus?: Record<string, boolean>):
   const contract = getRegistryContract();
   if (!contract) throw new Error("Blockchain not initialized");
 
-  const niches = await contract.getRegisteredNiches();
   const allSpecialists = [];
   const endpoints = await readJSON<any>(endpointsPath, {});
 
-  for (const niche of niches) {
-    const models = await contract.getModelsByNiche(niche);
-    for (const model of models) {
-      const idStr = model.id.toString();
+  const nextModelId = await contract.nextModelId();
+  for (let m = 0; m < Number(nextModelId); m++) {
+    const model = await contract.models(m);
+    if (!model.isActive) continue;
+
+    const providers = await contract.getActiveProviders(m);
+    for (const provider of providers) {
+      const idStr = provider.id.toString();
       const hasEndpoint = !!endpoints[idStr];
+      
       allSpecialists.push({
         id: idStr,
-        name: model.name,
+        modelId: model.id.toString(),
+        name: model.name, // Display model name
         niche: model.niche,
-        pricePerQuery: ethers.formatUnits(model.pricePerQuery, 6),
-        wallet: model.wallet,
-        isActive: model.isActive,
+        pricePerQuery: ethers.formatUnits(provider.pricePerToken, 6),
+        wallet: provider.wallet,
+        isActive: provider.isActive,
         endpoint: endpoints[idStr] || null,
         isOnline: healthStatus ? (hasEndpoint && !!healthStatus[idStr]) : false,
         averageScore: allRatings[idStr]?.averageScore || null,
         totalRatings: allRatings[idStr]?.totalRatings || 0,
-        stakedAmount: ethers.formatUnits(model.stakedAmount, 6),
-        slashCount: Number(model.slashCount)
+        stakedAmount: ethers.formatUnits(provider.stakedAmount, 6),
+        slashCount: Number(provider.slashCount)
       });
     }
   }
+  
   return allSpecialists;
 }
 
-export async function storeEndpoint(modelId: string, endpointUrl: string) {
+export async function storeEndpoint(providerId: string, endpointUrl: string) {
   const endpoints = await readJSON<any>(endpointsPath, {});
-  endpoints[modelId] = endpointUrl;
+  endpoints[providerId] = endpointUrl;
   await atomicWriteJSON(endpointsPath, endpoints);
 }

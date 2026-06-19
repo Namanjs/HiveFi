@@ -24,10 +24,7 @@ let usdcContract: ethers.Contract | null = null;
 let registryContract: ethers.Contract | null = null;
 let initialized = false;
 
-export interface Balances {
-  orchestrator: string;
-  specialists: Record<string, string>;
-}
+
 
 export interface Addresses {
   walletA: string;
@@ -56,21 +53,21 @@ export async function initializeBlockchain(): Promise<void> {
   provider = new ethers.JsonRpcProvider(rpcUrl);
 
   const pkA = process.env.ORCHESTRATOR_PK;
-  const pkB = process.env.SPECIALIST_PK;
+  const pkB = process.env.SPECIALIST_PK; // Only used for balances
 
-  if (!pkA || !pkB) {
-    throw new Error("ORCHESTRATOR_PK and SPECIALIST_PK must be set in .env");
+  if (!pkA) {
+    throw new Error("ORCHESTRATOR_PK must be set in .env");
   }
 
   walletA = new ethers.Wallet(pkA, provider);
-  walletB = new ethers.Wallet(pkB, provider);
+  if (pkB) walletB = new ethers.Wallet(pkB, provider);
 
   usdcContract = new ethers.Contract(usdcAddr, MockUSDC_ABI, walletA);
-  registryContract = new ethers.Contract(registryAddr, HiveRegistry_ABI, walletA);
+  registryContract = new ethers.Contract(registryAddr, HiveRegistry_ABI.abi || HiveRegistry_ABI, walletA);
 
   logger.info("Connecting to blockchain...");
   logger.info(`Wallet A (Orchestrator): ${walletA.address}`);
-  logger.info(`Wallet B (Specialist): ${walletB.address}`);
+  if (walletB) logger.info(`Wallet B (Specialist config): ${walletB.address}`);
 
   const currentAllowance = await usdcContract.allowance(walletA.address, registryAddr);
   if (currentAllowance < ethers.MaxUint256 / 2n) {
@@ -99,24 +96,44 @@ async function sendTxWithMutex(txFn: () => Promise<ethers.ContractTransactionRes
 }
 
 export async function requestTaskOnChain(
-  specialistWallet: string,
-  modelId: string,
-  amountInUSDC: string | number,
-  promptText: string
+  clientWallet: string,
+  providerId: string | number,
+  amountInUSDC: string | number, // This is now maxBudget
+  promptText: string,
+  mode: number = 0 // 0 = CHAT, 1 = AUTOMATED
 ): Promise<TaskRequestResult> {
   if (!initialized || !registryContract) throw new Error("Blockchain not initialized");
 
   const amountBase = ethers.parseUnits(amountInUSDC.toString(), 6);
   const promptHash = ethers.keccak256(ethers.toUtf8Bytes(promptText));
 
-  logger.info(`Locking ${amountInUSDC} USDC in escrow for specialist ${specialistWallet} (Model ID ${modelId})...`);
+  logger.info(`Locking ${amountInUSDC} USDC in escrow from ${clientWallet} for Provider ID ${providerId}...`);
 
   let taskId: bigint = 0n;
   const receipt = await txMutex.runExclusive(async () => {
     taskId = await registryContract!.nextTaskId();
-    const tx = await registryContract!.requestTask(specialistWallet, BigInt(modelId), amountBase, promptHash, {
-      gasLimit: 300000n,
-    });
+    
+    try {
+      await registryContract!.createTask.staticCall(
+        clientWallet, 
+        BigInt(providerId), 
+        amountBase, 
+        promptHash, 
+        mode
+      );
+    } catch (err: any) {
+      console.error("Static call failed! Revert reason:", err);
+      throw new Error("Pre-flight check failed: " + (err.reason || err.message));
+    }
+
+    const tx = await registryContract!.createTask(
+      clientWallet, 
+      BigInt(providerId), 
+      amountBase, 
+      promptHash, 
+      mode, 
+      { gasLimit: 300000n }
+    );
     logger.info(`Transaction submitted: ${tx.hash}`);
     const r = await tx.wait();
     if (!r) throw new Error("Transaction failed or was dropped");
@@ -130,15 +147,19 @@ export async function requestTaskOnChain(
   };
 }
 
-export async function approveTaskOnChain(taskId: string | number, resultText: string): Promise<TaskActionResult> {
+export async function settleTaskOnChain(
+  taskId: string | number, 
+  finalAmountBase: string, 
+  resultHash: string, 
+  signature: string
+): Promise<TaskActionResult> {
   if (!initialized || !registryContract) throw new Error("Blockchain not initialized");
 
-  const resultHash = ethers.keccak256(ethers.toUtf8Bytes(resultText));
-  logger.info(`Approving task ${taskId} with result hash...`);
+  logger.info(`Settling task ${taskId} with signature...`);
 
   const receipt = await sendTxWithMutex(() =>
-    registryContract!.approveTask(taskId, resultHash, {
-      gasLimit: 300000n,
+    registryContract!.settleTask(taskId, finalAmountBase, resultHash, signature, {
+      gasLimit: 400000n,
     })
   );
 
@@ -147,14 +168,19 @@ export async function approveTaskOnChain(taskId: string | number, resultText: st
   };
 }
 
-export async function rejectTaskOnChain(taskId: string | number): Promise<TaskActionResult> {
+export async function rejectTaskOnChain(
+  taskId: string | number,
+  finalAmountBase: string, 
+  resultHash: string, 
+  signature: string
+): Promise<TaskActionResult> {
   if (!initialized || !registryContract) throw new Error("Blockchain not initialized");
 
-  logger.info(`Rejecting task ${taskId} (requesting refund)...`);
+  logger.info(`Rejecting task ${taskId} (initiating three-way split)...`);
 
   const receipt = await sendTxWithMutex(() =>
-    registryContract!.rejectTask(taskId, {
-      gasLimit: 300000n,
+    registryContract!.rejectTask(taskId, finalAmountBase, resultHash, signature, {
+      gasLimit: 400000n,
     })
   );
 
@@ -163,32 +189,7 @@ export async function rejectTaskOnChain(taskId: string | number): Promise<TaskAc
   };
 }
 
-export async function getBalances(): Promise<Balances> {
-  if (!initialized || !usdcContract || !walletA) {
-    return { orchestrator: "0.00", specialists: {} };
-  }
 
-  try {
-    const registry = await import("./registry");
-    const balA = await usdcContract.balanceOf(walletA.address);
-    const specialists: Record<string, string> = {};
-
-    const allSpecialists = await registry.getAllSpecialists();
-    for (const spec of allSpecialists) {
-      const walletAddr = spec.wallet;
-      const bal = await usdcContract.balanceOf(walletAddr);
-      specialists[spec.niche] = ethers.formatUnits(bal, 6);
-    }
-
-    return {
-      orchestrator: ethers.formatUnits(balA, 6),
-      specialists
-    };
-  } catch (error) {
-    logger.error("Error fetching balances:", error);
-    return { orchestrator: "0.00", specialists: {} };
-  }
-}
 
 export function getRegistryContract(): ethers.Contract | null {
   return registryContract;
@@ -197,8 +198,8 @@ export function getRegistryContract(): ethers.Contract | null {
 export function getAddresses(): Addresses {
   if (!walletA || !walletB) {
     return {
-      walletA: "",
-      walletB: "",
+      walletA: walletA ? walletA.address : "",
+      walletB: walletB ? walletB.address : "",
     };
   }
   return {
