@@ -10,7 +10,7 @@ import * as dotenv from "dotenv";
 dotenv.config();
 
 import * as blockchain from "./services/blockchain";
-import { orchestrate } from "./services/orchestrator";
+import { orchestrate, analyzeIntent } from "./services/orchestrator";
 import * as registry from "./services/registry";
 import * as ratings from "./services/ratings";
 import * as llm from "./services/llm";
@@ -28,17 +28,34 @@ export function startHealthPoller() {
   setInterval(async () => {
     try {
       const specialists = await registry.getAllSpecialists();
+      let onlineCount = 0;
+
       for (const spec of specialists) {
         if (spec.endpoint) {
           const isHealthy = await llm.checkSpecialistHealth(spec.endpoint);
+          const wasHealthy = healthStatus[spec.id];
           healthStatus[spec.id] = isHealthy;
-          logger.info(`[Health Poll] ${spec.name} (${spec.id}): ${isHealthy ? 'Online' : 'Offline'}`);
+          
+          if (isHealthy) onlineCount++;
+
+          // Only log if the state changed (or first time seeing it online)
+          if (wasHealthy !== isHealthy) {
+            if (isHealthy) {
+              logger.info(`[Swarm Monitor] Node Connected: ${spec.name} (${spec.id}) is online.`);
+            } else if (wasHealthy === true) {
+              // Only warn if it was previously online and suddenly went offline
+              logger.warn(`[Swarm Monitor] Node Disconnected: ${spec.name} (${spec.id}) is unresponsive!`);
+            }
+          }
         } else {
           healthStatus[spec.id] = false;
         }
       }
+      
+      // Keep the heartbeat silent unless debugging
+      logger.debug(`[Swarm Monitor] Network heartbeat complete: ${onlineCount}/${specialists.length} nodes active.`);
     } catch (err) {
-      logger.error("[Health Poller Error]", err);
+      logger.error("[Swarm Monitor Error]", err);
     }
   }, 60000);
 }
@@ -98,10 +115,16 @@ interface OrchestrationRequestBody {
   prompt: string;
   socketId?: string;
   maxFee?: number;
+  clientWallet?: string;
+  delegationMode?: string;
+  manualModelId?: string;
+  customEndpoint?: string;
+  preAnalyzedIntent?: any;
+  nicheModels?: Record<string, string>;
 }
 
 app.post("/api/orchestrate", orchestrateLimiter, requireApiKey, async (req: Request<{}, {}, OrchestrationRequestBody>, res: Response): Promise<any> => {
-  const { prompt, socketId, maxFee } = req.body;
+  const { prompt, socketId, maxFee, clientWallet, delegationMode, manualModelId, customEndpoint } = req.body;
 
   if (!prompt || typeof prompt !== 'string') {
     return res.status(400).json({ success: false, error: "Prompt must be a non-empty string" });
@@ -116,7 +139,7 @@ app.post("/api/orchestrate", orchestrateLimiter, requireApiKey, async (req: Requ
   const targetSocket = socket || io; // fallback to broadcast if socket not found
 
   try {
-    const result = await orchestrate(prompt, targetSocket, maxFee);
+    const result = await orchestrate(prompt, targetSocket, maxFee, clientWallet, delegationMode, manualModelId, customEndpoint, req.body.preAnalyzedIntent, req.body.nicheModels);
     return res.json({ success: true, ...result });
   } catch (error: any) {
     logger.error("Orchestration error:", error);
@@ -124,18 +147,22 @@ app.post("/api/orchestrate", orchestrateLimiter, requireApiKey, async (req: Requ
   }
 });
 
-// GET /api/balances
-app.get("/api/balances", async (_req: Request, res: Response): Promise<any> => {
+app.post("/api/analyze-intent", orchestrateLimiter, requireApiKey, async (req: Request<{}, {}, OrchestrationRequestBody>, res: Response): Promise<any> => {
+  const { prompt, maxFee, clientWallet, delegationMode, customEndpoint } = req.body;
+
+  if (!prompt || typeof prompt !== 'string') {
+    return res.status(400).json({ success: false, error: "Prompt must be a non-empty string" });
+  }
+
+  if (prompt.length > 10000) {
+    return res.status(400).json({ success: false, error: "Prompt exceeds maximum length of 10000 characters" });
+  }
+
   try {
-    const balances = await blockchain.getBalances();
-    const addresses = blockchain.getAddresses();
-    return res.json({
-      success: true,
-      ...balances,
-      ...addresses,
-    });
+    const intent = await analyzeIntent(prompt, delegationMode, maxFee, clientWallet, customEndpoint);
+    return res.json({ success: true, intent });
   } catch (error: any) {
-    logger.error("Error fetching balances:", error);
+    logger.error("Analyze intent error:", error);
     return res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -153,10 +180,11 @@ app.get("/api/registry", async (_req: Request, res: Response): Promise<any> => {
 
 // POST /api/registry/register-endpoint
 app.post("/api/registry/register-endpoint", async (req: Request, res: Response): Promise<any> => {
-  const { modelId, endpointUrl } = req.body;
+  const { modelId, providerId, endpointUrl } = req.body;
+  const id = providerId !== undefined ? providerId : modelId;
   
-  if (!modelId || !endpointUrl || typeof endpointUrl !== 'string') {
-    return res.status(400).json({ success: false, error: "Missing required fields" });
+  if (id === undefined || id === null || !endpointUrl || typeof endpointUrl !== 'string') {
+    return res.status(400).json({ success: false, error: "Missing required fields (providerId and endpointUrl)" });
   }
   
   try {
@@ -166,7 +194,7 @@ app.post("/api/registry/register-endpoint", async (req: Request, res: Response):
   }
 
   try {
-    await registry.storeEndpoint(modelId, endpointUrl);
+    await registry.storeEndpoint(id, endpointUrl);
     return res.json({ success: true });
   } catch (error: any) {
     logger.error("Error storing endpoint:", error);
@@ -203,16 +231,16 @@ app.get("/api/ratings/:modelId", async (req: Request, res: Response): Promise<an
 
 // POST /api/stake
 app.post("/api/stake", async (req: Request, res: Response): Promise<any> => {
-  const { modelId, amount } = req.body;
+  const { providerId, amount } = req.body;
   
-  if (!modelId || !amount) {
-    return res.status(400).json({ success: false, error: "Missing required fields" });
+  if (!providerId || !amount) {
+    return res.status(400).json({ success: false, error: "Missing required fields (providerId and amount)" });
   }
 
   const contractAddress = process.env.HIVE_REGISTRY_ADDRESS;
   const abi = [
-    "function stakeForModel(uint256 modelId, uint256 amount) external",
-    "function unstakeFromModel(uint256 modelId) external"
+    "function stakeForProvider(uint256 providerId, uint256 amount) external",
+    "function unstakeFromProvider(uint256 providerId) external"
   ];
   
   return res.json({ success: true, contractAddress, abi });
