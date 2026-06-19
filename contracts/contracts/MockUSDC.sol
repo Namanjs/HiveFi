@@ -10,8 +10,7 @@ contract MockUSDC is ERC20, Ownable {
     mapping(address => uint256) public lastFaucetTime;
 
     constructor() ERC20("Mock USDC", "USDC") Ownable(msg.sender) {
-        // Mint initial supply to deployer if needed, or rely purely on public mint
-        _mint(msg.sender, 1000000 * 10**6); // 1 million Mock USDC
+        // No initial supply minted. Rely purely on public mint or faucet.
     }
 
     // Override decimals to match USDC (6 decimals)

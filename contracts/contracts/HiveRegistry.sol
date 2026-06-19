@@ -1,71 +1,88 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 
 contract HiveRegistry is ReentrancyGuard, Pausable {
+    using ECDSA for bytes32;
+    using MessageHashUtils for bytes32;
+
     IERC20 public immutable usdcToken;
     address public immutable slashTreasury;
     address public pauser;
+    
+    // Configurable platform settings
+    uint256 public platformFeeBps = 500; // 5% by default
+    uint256 public constant MINIMUM_STAKE = 1 * 10**6; // 1 USDC
+    uint256 public constant MAX_SLASH_COUNT = 5;
 
-    uint256 public constant MINIMUM_STAKE = 1 * 10**6; // 1 USDC minimum stake
-    uint256 public constant SLASH_AMOUNT = 500000; // 0.5 USDC slashed per failed QA
-    uint256 public constant MAX_SLASH_COUNT = 5; // Model deactivated after 5 slashes
-
-    enum Status { Pending, Approved, Rejected, TimeoutClaimed }
-
-    struct Task {
-        address client;
-        address orchestrator;
-        address specialist;
-        uint256 modelId;
-        uint256 amount;
-        bytes32 promptHash;
-        bytes32 resultHash;
-        uint256 createdAt;
-        Status status;
-    }
-
+    // Structs
     struct Model {
         uint256 id;
         string name;
         string niche;
-        uint256 pricePerQuery;
-        address wallet;
+        uint256 maxPricePerToken;
         bool isActive;
+    }
+
+    struct Provider {
+        uint256 id;
+        uint256 modelId;
+        address wallet;
+        string endpoint;
+        uint256 pricePerToken;
         uint256 stakedAmount;
         uint256 totalTasksCompleted;
         uint256 totalTasksFailed;
         uint256 slashCount;
+        bool isActive;
     }
 
-    // Task state
-    uint256 public nextTaskId;
-    mapping(uint256 => Task) public tasks;
+    enum TaskMode { CHAT, AUTOMATED }
+    enum TaskStatus { Pending, Settled, Rejected, Expired, ForceClaimed }
 
-    // Model Registry state
+    struct Task {
+        address client;
+        address orchestrator;
+        uint256 providerId;
+        uint256 maxBudget;
+        uint256 finalAmount;
+        bytes32 promptHash;
+        bytes32 resultHash;
+        TaskMode mode;
+        TaskStatus status;
+        uint256 createdAt;
+        uint256 providerDeadline;
+        uint256 userDeadline;
+    }
+
+    // State Variables
     uint256 public nextModelId;
     mapping(uint256 => Model) public models;
-    mapping(string => uint256[]) private nicheToModelIds;
-    mapping(uint256 => uint256) public modelPendingTasks; // tracks pending tasks
-    string[] public registeredNiches;
-    mapping(string => bool) private nicheExists;
+
+    uint256 public nextProviderId;
+    mapping(uint256 => Provider) public providers;
+    mapping(uint256 => uint256[]) public modelProviders; // modelId => array of providerIds
+
+    uint256 public nextTaskId;
+    mapping(uint256 => Task) public tasks;
+    mapping(uint256 => uint256) public providerPendingTasks;
 
     // Events
-    event ModelRegistered(uint256 indexed modelId, string name, string indexed niche, uint256 pricePerQuery, address wallet);
-    event ModelUpdated(uint256 indexed modelId, string name, uint256 pricePerQuery);
-    event TaskRequested(uint256 indexed taskId, address indexed client, address indexed orchestrator, address specialist, uint256 amount, bytes32 promptHash);
-    event TaskApproved(uint256 indexed taskId, bytes32 resultHash);
-    event TaskRejected(uint256 indexed taskId);
-    event TaskTimedOut(uint256 indexed taskId);
+    event ModelRegistered(uint256 indexed modelId, string name);
+    event ProviderRegistered(uint256 indexed providerId, uint256 indexed modelId, address wallet, string endpoint, uint256 pricePerToken);
+    event ProviderStaked(uint256 indexed providerId, uint256 amount, uint256 totalStake);
+    event ProviderSlashed(uint256 indexed providerId, uint256 slashCount, uint256 remainingStake);
     
-    event ModelStaked(uint256 indexed modelId, uint256 amount, uint256 totalStake);
-    event ModelUnstaked(uint256 indexed modelId, uint256 amount);
-    event ModelSlashed(uint256 indexed modelId, uint256 newSlashCount, uint256 remainingStake);
-    event ModelDeactivated(uint256 indexed modelId, string reason);
-    event PauserTransferred(address indexed oldPauser, address indexed newPauser);
+    event TaskRequested(uint256 indexed taskId, address indexed client, uint256 indexed providerId, uint256 maxBudget, TaskMode mode);
+    event TaskSettled(uint256 indexed taskId, uint256 finalAmount, bytes32 resultHash);
+    event TaskRejected(uint256 indexed taskId, uint256 finalAmount);
+    event TaskForceClaimed(uint256 indexed taskId, uint256 finalAmount);
+    event TaskExpired(uint256 indexed taskId);
 
     constructor(address _usdcToken, address _slashTreasury) {
         require(_usdcToken != address(0), "Invalid token address");
@@ -75,225 +92,308 @@ contract HiveRegistry is ReentrancyGuard, Pausable {
         pauser = msg.sender;
     }
 
-    function pause() external {
-        require(msg.sender == pauser, "Only pauser can pause");
-        _pause();
+    modifier onlyPauser() {
+        require(msg.sender == pauser, "Only pauser");
+        _;
     }
 
-    function unpause() external {
-        require(msg.sender == pauser, "Only pauser can unpause");
-        _unpause();
-    }
-
-    function transferPauser(address newPauser) external {
-        require(msg.sender == pauser, "Only pauser can transfer");
-        require(newPauser != address(0), "New pauser is the zero address");
-        address oldPauser = pauser;
+    function transferPauser(address newPauser) external onlyPauser {
         pauser = newPauser;
-        emit PauserTransferred(oldPauser, newPauser);
     }
 
-    // Model Registry Functions
+    function pause() external onlyPauser { _pause(); }
+    function unpause() external onlyPauser { _unpause(); }
+
+    function setPlatformFeeBps(uint256 newFeeBps) external onlyPauser {
+        require(newFeeBps <= 2000, "Fee too high"); // max 20%
+        platformFeeBps = newFeeBps;
+    }
+
+    // ═══════════════════════════════════════════
+    // ADMIN FUNCTIONS
+    // ═══════════════════════════════════════════
     function registerModel(
         string calldata name,
         string calldata niche,
-        uint256 pricePerQuery,
-        address wallet
-    ) external nonReentrant whenNotPaused returns (uint256) {
-        require(wallet != address(0), "Invalid wallet address");
-        require(bytes(name).length > 0, "Name cannot be empty");
-        require(bytes(niche).length > 0, "Niche cannot be empty");
-
+        uint256 maxPricePerToken
+    ) external returns (uint256) {
         uint256 modelId = nextModelId++;
         models[modelId] = Model({
             id: modelId,
             name: name,
             niche: niche,
-            pricePerQuery: pricePerQuery,
-            wallet: wallet,
-            isActive: true,
-            stakedAmount: 0,
-            totalTasksCompleted: 0,
-            totalTasksFailed: 0,
-            slashCount: 0
+            maxPricePerToken: maxPricePerToken,
+            isActive: true
         });
-        // Note: Orchestrators should prefer staked models
 
-        nicheToModelIds[niche].push(modelId);
-        if (!nicheExists[niche]) {
-            nicheExists[niche] = true;
-            registeredNiches.push(niche);
-        }
-
-        emit ModelRegistered(modelId, name, niche, pricePerQuery, wallet);
+        emit ModelRegistered(modelId, name);
         return modelId;
     }
 
-    function getRegisteredNiches() external view returns (string[] memory) {
-        return registeredNiches;
+    // ═══════════════════════════════════════════
+    // PROVIDER FUNCTIONS
+    // ═══════════════════════════════════════════
+    function registerProvider(
+        uint256 modelId,
+        string calldata endpoint,
+        uint256 pricePerToken,
+        uint256 initialStake
+    ) external nonReentrant whenNotPaused returns (uint256) {
+        require(models[modelId].isActive, "Model inactive");
+        require(pricePerToken <= models[modelId].maxPricePerToken, "Price exceeds cap");
+        require(initialStake >= MINIMUM_STAKE, "Stake below minimum");
+
+        require(usdcToken.transferFrom(msg.sender, address(this), initialStake), "USDC transfer failed");
+
+        uint256 providerId = nextProviderId++;
+        providers[providerId] = Provider({
+            id: providerId,
+            modelId: modelId,
+            wallet: msg.sender,
+            endpoint: endpoint,
+            pricePerToken: pricePerToken,
+            stakedAmount: initialStake,
+            totalTasksCompleted: 0,
+            totalTasksFailed: 0,
+            slashCount: 0,
+            isActive: true
+        });
+
+        modelProviders[modelId].push(providerId);
+        emit ProviderRegistered(providerId, modelId, msg.sender, endpoint, pricePerToken);
+        emit ProviderStaked(providerId, initialStake, initialStake);
+        return providerId;
     }
 
-    function updateModel(uint256 modelId, string calldata name, uint256 pricePerQuery) external {
-        Model storage model = models[modelId];
-        require(model.wallet == msg.sender, "Only model wallet can update");
-        require(model.isActive, "Model is deactivated");
-        require(bytes(name).length > 0, "Name cannot be empty");
-        model.name = name;
-        model.pricePerQuery = pricePerQuery;
-        emit ModelUpdated(modelId, name, pricePerQuery);
-    }
-
-    function stakeForModel(uint256 modelId, uint256 amount) external nonReentrant whenNotPaused {
-        require(amount > 0, "Amount must be greater than zero");
-        Model storage model = models[modelId];
-        require(model.wallet == msg.sender, "Only model wallet can stake");
+    function stakeForProvider(uint256 providerId, uint256 amount) external nonReentrant whenNotPaused {
+        require(amount > 0, "Amount must be > 0");
+        Provider storage provider = providers[providerId];
+        require(provider.wallet == msg.sender, "Only provider wallet");
         
         require(usdcToken.transferFrom(msg.sender, address(this), amount), "USDC transfer failed");
-        
-        model.stakedAmount += amount;
-        emit ModelStaked(modelId, amount, model.stakedAmount);
+        provider.stakedAmount += amount;
+        emit ProviderStaked(providerId, amount, provider.stakedAmount);
     }
 
-    function unstakeFromModel(uint256 modelId) external nonReentrant whenNotPaused {
-        Model storage model = models[modelId];
-        require(model.wallet == msg.sender, "Only model wallet can unstake");
-        require(!model.isActive || modelPendingTasks[modelId] == 0, "Cannot unstake with active status or pending tasks");
+    function unstakeFromProvider(uint256 providerId) external nonReentrant whenNotPaused {
+        Provider storage provider = providers[providerId];
+        require(provider.wallet == msg.sender, "Only provider wallet");
+        require(!provider.isActive || providerPendingTasks[providerId] == 0, "Cannot unstake if active or busy");
         
-        uint256 amount = model.stakedAmount;
+        uint256 amount = provider.stakedAmount;
         require(amount > 0, "Nothing to unstake");
         
-        model.stakedAmount = 0;
-        require(usdcToken.transfer(model.wallet, amount), "USDC transfer failed");
-        
-        emit ModelUnstaked(modelId, amount);
+        provider.stakedAmount = 0;
+        require(usdcToken.transfer(provider.wallet, amount), "USDC transfer failed");
     }
 
-    function _slashModel(uint256 modelId) internal {
-        Model storage model = models[modelId];
-        model.totalTasksFailed += 1;
+    function updateProviderConfig(uint256 providerId, string calldata endpoint, uint256 pricePerToken) external {
+        Provider storage provider = providers[providerId];
+        require(provider.wallet == msg.sender, "Only provider wallet");
+        require(pricePerToken <= models[provider.modelId].maxPricePerToken, "Price exceeds cap");
         
-        uint256 slashAmount = SLASH_AMOUNT;
-        if (model.stakedAmount < slashAmount) {
-            slashAmount = model.stakedAmount;
-        }
-        
-        if (slashAmount > 0) {
-            model.stakedAmount -= slashAmount;
-            require(usdcToken.transfer(slashTreasury, slashAmount), "Slash transfer failed");
-        }
-        
-        model.slashCount += 1;
-        emit ModelSlashed(modelId, model.slashCount, model.stakedAmount);
-        
-        if (model.slashCount >= MAX_SLASH_COUNT) {
-            model.isActive = false;
-            emit ModelDeactivated(modelId, "Max slash count reached");
-        } else if (model.stakedAmount < MINIMUM_STAKE && model.isActive) {
-            model.isActive = false;
-            emit ModelDeactivated(modelId, "Stake below minimum");
-        }
+        provider.endpoint = endpoint;
+        provider.pricePerToken = pricePerToken;
     }
 
-    function getModelsByNiche(string calldata niche) external view returns (Model[] memory) {
-        uint256[] memory ids = nicheToModelIds[niche];
+    function deactivateProvider(uint256 providerId) external {
+        Provider storage provider = providers[providerId];
+        require(provider.wallet == msg.sender || msg.sender == pauser, "Unauthorized");
+        provider.isActive = false;
+    }
+
+    function getActiveProviders(uint256 modelId) external view returns (Provider[] memory) {
+        uint256[] memory pIds = modelProviders[modelId];
         uint256 activeCount = 0;
         
-        for (uint256 i = 0; i < ids.length; i++) {
-            if (models[ids[i]].isActive) {
+        for (uint256 i = 0; i < pIds.length; i++) {
+            if (providers[pIds[i]].isActive) {
                 activeCount++;
             }
         }
 
-        Model[] memory activeModels = new Model[](activeCount);
+        Provider[] memory activeProviders = new Provider[](activeCount);
         uint256 currentIndex = 0;
-        for (uint256 i = 0; i < ids.length; i++) {
-            if (models[ids[i]].isActive) {
-                activeModels[currentIndex] = models[ids[i]];
+        for (uint256 i = 0; i < pIds.length; i++) {
+            if (providers[pIds[i]].isActive) {
+                activeProviders[currentIndex] = providers[pIds[i]];
                 currentIndex++;
             }
         }
 
-        return activeModels;
+        return activeProviders;
     }
 
-    // Escrow Functions
-    function requestTask(
+    // ═══════════════════════════════════════════
+    // TASK FUNCTIONS
+    // ═══════════════════════════════════════════
+    function createTask(
         address client,
-        address specialist,
-        uint256 modelId,
-        uint256 amount,
-        bytes32 promptHash
+        uint256 providerId,
+        uint256 maxBudget,
+        bytes32 promptHash,
+        TaskMode mode
     ) external nonReentrant whenNotPaused returns (uint256) {
-        require(client != address(0), "Invalid client address");
-        require(specialist != address(0), "Invalid specialist address");
-        require(amount > 0, "Amount must be greater than zero");
+        require(client != address(0), "Invalid client");
+        require(maxBudget > 0, "Budget > 0 required");
+        Provider storage provider = providers[providerId];
+        require(provider.isActive, "Provider inactive");
+        require(provider.stakedAmount >= MINIMUM_STAKE, "Provider under-staked");
 
         uint256 taskId = nextTaskId++;
+        uint256 pDeadline = block.timestamp + 30 minutes;
+        uint256 uDeadline = mode == TaskMode.CHAT ? pDeadline + 24 hours : 0;
+
         tasks[taskId] = Task({
             client: client,
             orchestrator: msg.sender,
-            specialist: specialist,
-            modelId: modelId,
-            amount: amount,
+            providerId: providerId,
+            maxBudget: maxBudget,
+            finalAmount: 0,
             promptHash: promptHash,
             resultHash: bytes32(0),
+            mode: mode,
+            status: TaskStatus.Pending,
             createdAt: block.timestamp,
-            status: Status.Pending
+            providerDeadline: pDeadline,
+            userDeadline: uDeadline
         });
-        modelPendingTasks[modelId] += 1;
 
-        // Transfer USDC from client to this contract escrow
-        require(usdcToken.transferFrom(client, address(this), amount), "USDC transfer failed");
+        providerPendingTasks[providerId] += 1;
+        require(usdcToken.transferFrom(client, address(this), maxBudget), "USDC transfer failed");
 
-        emit TaskRequested(taskId, client, msg.sender, specialist, amount, promptHash);
+        emit TaskRequested(taskId, client, providerId, maxBudget, mode);
         return taskId;
     }
 
-    function approveTask(uint256 taskId, bytes32 resultHash) external nonReentrant whenNotPaused {
+    function verifySignature(uint256 taskId, uint256 finalAmount, bytes32 resultHash, bytes memory signature) public view returns (bool) {
         Task storage task = tasks[taskId];
-        require(task.status == Status.Pending, "Task not pending");
-        require(msg.sender == task.orchestrator, "Only orchestrator can approve");
+        Provider storage provider = providers[task.providerId];
 
-        task.status = Status.Approved;
+        // EIP-191 payload: (taskId, finalAmount, resultHash)
+        bytes32 hash = keccak256(abi.encodePacked(taskId, finalAmount, resultHash));
+        bytes32 ethSignedMessageHash = hash.toEthSignedMessageHash();
+        
+        return ethSignedMessageHash.recover(signature) == provider.wallet;
+    }
+
+    function _distributePayment(uint256 providerId, uint256 finalAmount, uint256 refundAmount, address clientWallet) internal {
+        Provider storage provider = providers[providerId];
+
+        uint256 platformCut = (finalAmount * platformFeeBps) / 10000;
+        uint256 providerCut = finalAmount - platformCut;
+
+        if (platformCut > 0) require(usdcToken.transfer(slashTreasury, platformCut), "Platform fee transfer failed");
+        if (providerCut > 0) require(usdcToken.transfer(provider.wallet, providerCut), "Provider transfer failed");
+        if (refundAmount > 0) require(usdcToken.transfer(clientWallet, refundAmount), "Refund transfer failed");
+    }
+
+    function settleTask(uint256 taskId, uint256 finalAmount, bytes32 resultHash, bytes memory signature) external nonReentrant whenNotPaused {
+        Task storage task = tasks[taskId];
+        require(task.status == TaskStatus.Pending, "Not pending");
+        require(finalAmount <= task.maxBudget, "Final amount exceeds budget");
+        require(verifySignature(taskId, finalAmount, resultHash, signature), "Invalid provider signature");
+
+        if (task.mode == TaskMode.CHAT) {
+            require(msg.sender == task.orchestrator || msg.sender == task.client, "Only orchestrator/client can settle CHAT task");
+        }
+
+        task.status = TaskStatus.Settled;
+        task.finalAmount = finalAmount;
         task.resultHash = resultHash;
-        modelPendingTasks[task.modelId] -= 1;
-        models[task.modelId].totalTasksCompleted += 1;
+        providerPendingTasks[task.providerId] -= 1;
+        providers[task.providerId].totalTasksCompleted += 1;
 
-        // Release USDC to specialist
-        require(usdcToken.transfer(task.specialist, task.amount), "USDC transfer to specialist failed");
+        uint256 refund = task.maxBudget - finalAmount;
+        _distributePayment(task.providerId, finalAmount, refund, task.client);
 
-        emit TaskApproved(taskId, resultHash);
+        emit TaskSettled(taskId, finalAmount, resultHash);
     }
 
-    function rejectTask(uint256 taskId) external nonReentrant whenNotPaused {
+    function rejectTask(uint256 taskId, uint256 finalAmount, bytes32 resultHash, bytes memory signature) external nonReentrant whenNotPaused {
         Task storage task = tasks[taskId];
-        require(task.status == Status.Pending, "Task not pending");
-        require(msg.sender == task.orchestrator, "Only orchestrator can reject");
+        require(task.status == TaskStatus.Pending, "Not pending");
+        require(task.mode == TaskMode.CHAT, "Cannot reject AUTOMATED task");
+        require(msg.sender == task.orchestrator || msg.sender == task.client, "Only orchestrator/client can reject");
+        require(finalAmount <= task.maxBudget, "Final amount exceeds budget");
+        require(verifySignature(taskId, finalAmount, resultHash, signature), "Invalid provider signature");
 
-        task.status = Status.Rejected;
-        modelPendingTasks[task.modelId] -= 1;
+        task.status = TaskStatus.Rejected;
+        task.finalAmount = finalAmount;
+        task.resultHash = resultHash;
+        providerPendingTasks[task.providerId] -= 1;
+        
+        _slashProvider(task.providerId);
 
-        // Refund USDC to client
-        require(usdcToken.transfer(task.client, task.amount), "USDC refund to client failed");
+        uint256 computeFee = (finalAmount * 2000) / 10000;
+        uint256 disputeFee = (finalAmount * 500) / 10000;
+        uint256 refund = task.maxBudget - computeFee - disputeFee;
 
-        // Internal slash logic
-        _slashModel(task.modelId);
+        Provider storage provider = providers[task.providerId];
+        if (computeFee > 0) require(usdcToken.transfer(provider.wallet, computeFee), "Compute fee transfer failed");
+        if (disputeFee > 0) require(usdcToken.transfer(slashTreasury, disputeFee), "Dispute fee transfer failed");
+        if (refund > 0) require(usdcToken.transfer(task.client, refund), "Refund transfer failed");
 
-        emit TaskRejected(taskId);
+        emit TaskRejected(taskId, finalAmount);
     }
 
-    function claimTimeout(uint256 taskId) external nonReentrant whenNotPaused {
+    function forceClaim(uint256 taskId, uint256 finalAmount, bytes32 resultHash, bytes memory signature) external nonReentrant whenNotPaused {
         Task storage task = tasks[taskId];
-        require(task.status == Status.Pending, "Task not pending");
-        require(msg.sender == task.specialist, "Only specialist can claim timeout");
-        require(block.timestamp >= task.createdAt + 300, "Timeout period has not passed"); // 5 minutes
+        require(task.status == TaskStatus.Pending, "Not pending");
+        require(task.mode == TaskMode.CHAT, "Only CHAT tasks have force claim");
+        require(block.timestamp > task.userDeadline, "User deadline not passed");
+        require(finalAmount <= task.maxBudget, "Final amount exceeds budget");
+        require(verifySignature(taskId, finalAmount, resultHash, signature), "Invalid provider signature");
 
-        task.status = Status.TimeoutClaimed;
-        modelPendingTasks[task.modelId] -= 1;
+        Provider storage provider = providers[task.providerId];
+        require(msg.sender == provider.wallet, "Only provider wallet can force claim");
 
-        // Release USDC to specialist
-        require(usdcToken.transfer(task.specialist, task.amount), "USDC transfer failed");
+        task.status = TaskStatus.ForceClaimed;
+        task.finalAmount = finalAmount;
+        task.resultHash = resultHash;
+        providerPendingTasks[task.providerId] -= 1;
+        providers[task.providerId].totalTasksCompleted += 1;
 
-        emit TaskTimedOut(taskId);
+        uint256 refund = task.maxBudget - finalAmount;
+        _distributePayment(task.providerId, finalAmount, refund, task.client);
+
+        emit TaskForceClaimed(taskId, finalAmount);
+    }
+
+    function expireTask(uint256 taskId) external nonReentrant whenNotPaused {
+        Task storage task = tasks[taskId];
+        require(task.status == TaskStatus.Pending, "Not pending");
+        require(block.timestamp > task.providerDeadline, "Provider deadline not passed");
+
+        task.status = TaskStatus.Expired;
+        providerPendingTasks[task.providerId] -= 1;
+
+        _slashProvider(task.providerId);
+
+        require(usdcToken.transfer(task.client, task.maxBudget), "Refund transfer failed");
+
+        emit TaskExpired(taskId);
+    }
+
+    function _slashProvider(uint256 providerId) internal {
+        Provider storage provider = providers[providerId];
+        provider.totalTasksFailed += 1;
+        
+        uint256 slashAmount = 500000;
+        if (provider.stakedAmount < slashAmount) {
+            slashAmount = provider.stakedAmount;
+        }
+        
+        if (slashAmount > 0) {
+            provider.stakedAmount -= slashAmount;
+            require(usdcToken.transfer(slashTreasury, slashAmount), "Slash transfer failed");
+        }
+        
+        provider.slashCount += 1;
+        emit ProviderSlashed(providerId, provider.slashCount, provider.stakedAmount);
+        
+        if (provider.slashCount >= MAX_SLASH_COUNT || provider.stakedAmount < MINIMUM_STAKE) {
+            provider.isActive = false;
+        }
     }
 }

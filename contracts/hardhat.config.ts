@@ -6,8 +6,9 @@ dotenv.config();
 
 const config: HardhatUserConfig = {
   solidity: {
-    version: "0.8.20",
+    version: "0.8.24",
     settings: {
+      evmVersion: "cancun",
       optimizer: {
         enabled: true,
         runs: 200,
@@ -17,8 +18,8 @@ const config: HardhatUserConfig = {
   networks: {
     hardhat: {},
     baseSepolia: {
-      url: process.env.BASE_SEPOLIA_RPC || "https://sepolia.base.org",
-      accounts: process.env.ORCHESTRATOR_PK ? [process.env.ORCHESTRATOR_PK] : [],
+      url: process.env.BASE_RPC_URL || process.env.BASE_SEPOLIA_RPC || "https://sepolia.base.org",
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : (process.env.ORCHESTRATOR_PK ? [process.env.ORCHESTRATOR_PK] : []),
     },
   },
 };
