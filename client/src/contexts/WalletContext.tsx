@@ -42,10 +42,24 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     setWallet((prev) => ({ ...prev, isConnecting: true, error: null }));
 
     try {
-      // Force the permission prompt even if previously connected
       const provider = new BrowserProvider(window.ethereum);
-      await provider.send("wallet_requestPermissions", [{ eth_accounts: {} }]);
-      await provider.send("eth_requestAccounts", []);
+      
+      // Enforce Sepolia Network
+      const network = await provider.getNetwork();
+      if (network.chainId !== 11155111n) {
+        try {
+          await provider.send("wallet_switchEthereumChain", [{ chainId: "0xaa36a7" }]);
+        } catch (switchError: any) {
+          throw new Error("Please switch your wallet to the Ethereum Sepolia network.");
+        }
+      }
+
+      // Check if already authorized
+      const accounts = await provider.send("eth_accounts", []);
+      if (accounts.length === 0) {
+        await provider.send("wallet_requestPermissions", [{ eth_accounts: {} }]);
+        await provider.send("eth_requestAccounts", []);
+      }
       
       const signer = await provider.getSigner();
       const address = await signer.getAddress();
