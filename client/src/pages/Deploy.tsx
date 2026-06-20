@@ -48,7 +48,7 @@ function CustomSelect({ options, value, onChange, placeholder }: CustomSelectPro
   return (
     <div className="relative w-full" ref={containerRef}>
       <div 
-        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none transition-colors cursor-pointer flex justify-between items-center hover:border-white/20 hover:bg-white/10 focus:ring-2 focus:ring-[var(--color-accent)]"
+        className="w-full bg-[#18181b] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none transition-colors cursor-pointer flex justify-between items-center hover:border-white/30 focus:ring-1 focus:ring-white/30"
         onClick={() => setIsOpen(!isOpen)}
         onKeyDown={(e) => {
           if (e.key === "Enter" || e.key === " ") {
@@ -60,27 +60,27 @@ function CustomSelect({ options, value, onChange, placeholder }: CustomSelectPro
         role="combobox"
         aria-expanded={isOpen}
         aria-haspopup="listbox"
-        style={{ borderColor: isOpen ? "var(--color-accent)" : "" }}
+        style={{ borderColor: isOpen ? "rgba(255,255,255,0.3)" : "" }}
       >
-        <span className={selectedOption ? "text-white" : "text-white/40"}>
+        <span className={selectedOption ? "text-white" : "text-[#a1a1aa]"}>
           {selectedOption ? selectedOption.label : placeholder}
         </span>
-        <ChevronDown size={16} className={`transition-transform duration-300 text-white/50 ${isOpen ? "rotate-180 text-white" : ""}`} />
+        <ChevronDown size={14} className={`transition-transform duration-200 text-[#a1a1aa] ${isOpen ? "rotate-180 text-white" : ""}`} />
       </div>
 
       <div 
-        className={`absolute top-full left-0 w-full mt-2 bg-[#1a1a1c]/95 backdrop-blur-3xl border border-white/10 rounded-xl overflow-hidden shadow-[0_16px_40px_rgba(0,0,0,0.8)] transition-all duration-300 z-[100] origin-top ${
-          isOpen ? "opacity-100 scale-y-100 translate-y-0" : "opacity-0 scale-y-95 -translate-y-2 pointer-events-none"
+        className={`absolute top-full left-0 w-full mt-1.5 bg-[#09090b] border border-white/10 rounded-lg overflow-hidden shadow-lg transition-all duration-200 z-[100] origin-top ${
+          isOpen ? "opacity-100 scale-y-100 translate-y-0" : "opacity-0 scale-y-95 -translate-y-1 pointer-events-none"
         }`}
         role="listbox"
       >
         {options.map((opt) => (
           <div 
             key={opt.value}
-            className={`px-4 py-3 text-sm cursor-pointer transition-colors flex items-center gap-2 outline-none ${
+            className={`px-4 py-2.5 text-sm cursor-pointer transition-colors flex items-center gap-2 outline-none ${
               value === opt.value 
-                ? "bg-[var(--color-accent)]/20 text-white font-medium border-l-2 border-[var(--color-accent)]" 
-                : "text-[#ccc] hover:bg-white/10 hover:text-white focus:bg-white/10 focus:text-white border-l-2 border-transparent"
+                ? "bg-white/10 text-white font-medium" 
+                : "text-[#a1a1aa] hover:bg-white/5 hover:text-white focus:bg-white/5 focus:text-white"
             }`}
             onClick={() => {
               onChange(opt.value);
@@ -216,7 +216,6 @@ export default function Deploy() {
       setDeployStep("Notifying HiveFi Orchestrator...");
       
       // Extract Provider ID from ProviderRegistered event logs
-      // Event: ProviderRegistered(uint256 indexed providerId, uint256 indexed modelId, address wallet, string endpoint, uint256 pricePerToken)
       let actualProviderId = modelId;
       for (const log of receipt.logs) {
         try {
@@ -269,48 +268,45 @@ export default function Deploy() {
   };
 
   return (
-    <div className="w-full h-full p-8 overflow-y-auto pb-32">
+    <div className="w-full h-full p-4 md:p-8 overflow-y-auto pb-32 custom-scrollbar">
       <div className="max-w-4xl mx-auto space-y-8">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 border-b border-white/10 pb-6">
           <div>
-            <h1 className="text-3xl font-bold text-white tracking-wide">
+            <h1 className="text-2xl font-semibold tracking-tight text-white">
               {activeTab === "deploy" ? "Deploy Specialist" : "Manage Specialist"}
             </h1>
-            <p className="text-[#888] mt-2">
+            <p className="text-[#a1a1aa] mt-1.5 text-sm">
               {activeTab === "deploy" 
                 ? "Configure a new AI agent, set its base fee, and deploy it to the HiveFi Swarm."
                 : "Update configurations, modify fees, or adjust system prompts for your deployed agents."}
             </p>
           </div>
 
-          {/* Mode Toggle */}
-          <div className="flex items-center bg-black/40 backdrop-blur-xl border border-white/10 rounded-xl p-1 shrink-0">
+          {/* Mode Toggle Horizontal */}
+          <div className="flex items-center bg-[#09090b] border border-white/10 rounded-lg p-1 shrink-0 shadow-sm">
             <button 
               onClick={() => setActiveTab("deploy")}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${activeTab === "deploy" ? "bg-white/10 text-white shadow-md" : "text-[#888] hover:text-white"}`}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === "deploy" ? "bg-white text-black shadow-sm" : "text-[#a1a1aa] hover:text-white"}`}
             >
               Deploy New
             </button>
             <button 
               onClick={() => setActiveTab("manage")}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${activeTab === "manage" ? "bg-white/10 text-white shadow-md" : "text-[#888] hover:text-white"}`}
+              className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${activeTab === "manage" ? "bg-white text-black shadow-sm" : "text-[#a1a1aa] hover:text-white"}`}
             >
               Manage Existing
             </button>
           </div>
         </div>
 
-        <div className="bg-black/40 backdrop-blur-3xl border border-white/10 rounded-3xl p-8 shadow-[0_8px_32px_rgba(0,0,0,0.5)] relative overflow-visible">
-          {/* Decorative Glow */}
-          <div className="absolute top-0 right-0 w-64 h-64 bg-[var(--color-accent)]/10 rounded-full blur-[100px] pointer-events-none z-0" />
-          
-          <form className="space-y-8 relative z-10" onSubmit={(e) => e.preventDefault()}>
+        <div className="bg-[#09090b] border border-white/10 rounded-xl p-6 md:p-10 shadow-sm">
+          <form className="space-y-8" onSubmit={(e) => e.preventDefault()}>
             
             {activeTab === "manage" && (
-              <div className="mb-8 pb-8 border-b border-white/5 animate-[slide-down_0.3s_ease-out]">
+              <div className="mb-8 pb-8 border-b border-white/10">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-3">
-                    <label className="ml-1 text-xs font-mono text-[#888] uppercase tracking-wider">Select Agent to Manage</label>
+                  <div className="space-y-2">
+                    <label className="text-xs font-medium text-[#a1a1aa]">Select Agent to Manage</label>
                     <CustomSelect 
                       options={existingAgents} 
                       value={selectedExistingAgent} 
@@ -323,18 +319,18 @@ export default function Deploy() {
             )}
             
             <div className="space-y-6">
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <Bot className="text-[var(--color-accent)]" size={20} />
+              <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+                <Bot className="text-[#a1a1aa]" size={16} />
                 Agent Identity
               </h2>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-3">
-                  <label className="ml-1 text-xs font-mono text-[#888] uppercase tracking-wider">Agent Name</label>
-                  <input value={agentName} onChange={e => setAgentName(e.target.value)} type="text" placeholder="e.g. Qwen Frontend Specialist" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[var(--color-accent)] focus:bg-white/10 transition-colors" />
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-[#a1a1aa]">Agent Name</label>
+                  <input value={agentName} onChange={e => setAgentName(e.target.value)} type="text" placeholder="e.g. Qwen Frontend Specialist" className="w-full bg-[#18181b] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/30 transition-all placeholder:text-[#a1a1aa]/50" />
                 </div>
-                <div className="space-y-3">
-                  <label className="ml-1 text-xs font-mono text-[#888] uppercase tracking-wider">Specialty Niche</label>
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-[#a1a1aa]">Specialty Niche</label>
                   <CustomSelect 
                     options={nicheOptions} 
                     value={niche} 
@@ -342,7 +338,7 @@ export default function Deploy() {
                     placeholder="Select Niche..." 
                   />
                   {niche === "custom" && (
-                     <input value={customNiche} onChange={e => setCustomNiche(e.target.value)} type="text" placeholder="Enter custom niche label" className="w-full mt-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[var(--color-accent)] transition-colors animate-[slide-down_0.3s_ease-out]" />
+                     <input value={customNiche} onChange={e => setCustomNiche(e.target.value)} type="text" placeholder="Enter custom niche label" className="w-full mt-3 bg-[#18181b] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/30 transition-all placeholder:text-[#a1a1aa]/50 animate-[slide-down_0.2s_ease-out]" />
                   )}
                 </div>
               </div>
@@ -351,34 +347,35 @@ export default function Deploy() {
             <hr className="border-white/5" />
 
             <div className="space-y-6">
-              <h2 className="text-xl font-bold text-white flex items-center gap-2">
-                <Network className="text-[var(--color-secondary-accent)]" size={20} />
+              <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+                <Network className="text-[#a1a1aa]" size={16} />
                 Network Configuration
               </h2>
               
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div className="space-y-3">
-                  <label className="ml-1 text-xs font-mono text-[#888] uppercase tracking-wider">Railway Endpoint URL (Provider)</label>
-                  <input value={endpointUrl} onChange={e => setEndpointUrl(e.target.value)} type="text" placeholder="e.g. https://specialist-models-production.up.railway.app" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[var(--color-accent)] focus:bg-white/10 transition-colors" />
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-[#a1a1aa]">Railway Endpoint URL (Provider)</label>
+                  <input value={endpointUrl} onChange={e => setEndpointUrl(e.target.value)} type="text" placeholder="https://specialist-models..." className="w-full bg-[#18181b] border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/30 transition-all placeholder:text-[#a1a1aa]/50" />
                 </div>
-                <div className="space-y-3">
-                  <label className="ml-1 text-xs font-mono text-[#888] uppercase tracking-wider">Base Fee (USDC)</label>
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-[#a1a1aa]">Base Fee (USDC)</label>
                   <div className="relative">
-                    <input value={baseFee} onChange={e => setBaseFee(e.target.value)} type="number" step="0.0001" placeholder="0.0001" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white font-mono focus:outline-none focus:border-[var(--color-accent)] focus:bg-white/10 transition-colors pl-10" />
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[#888] font-mono">$</span>
+                    <input value={baseFee} onChange={e => setBaseFee(e.target.value)} type="number" step="0.0001" placeholder="0.0001" className="w-full bg-[#18181b] border border-white/10 rounded-lg pl-8 pr-4 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/30 transition-all placeholder:text-[#a1a1aa]/50" />
+                    <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#a1a1aa] font-mono">$</span>
                   </div>
                 </div>
               </div>
             </div>
 
             {deployError && (
-              <div className="p-4 bg-red-500/20 border border-red-500/50 rounded-xl text-red-200 text-sm">
+              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-red-400 text-sm flex items-start gap-2">
+                <Loader2 className="shrink-0 hidden" />
                 {deployError}
               </div>
             )}
             
             {deploySuccess && (
-              <div className="p-4 bg-green-500/20 border border-green-500/50 rounded-xl text-green-200 text-sm">
+              <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg text-emerald-400 text-sm">
                 Deployment and Registration Successful!
               </div>
             )}
@@ -389,28 +386,25 @@ export default function Deploy() {
                   onClick={handleDeploy}
                   disabled={isDeploying}
                   type="button" 
-                  className={`w-full relative group font-bold py-4 rounded-xl overflow-hidden hover:scale-[1.02] transition-transform smooth-spring shadow-[0_0_20px_rgba(255,255,255,0.2)] ${isDeploying ? 'bg-white/50 text-black/50 cursor-not-allowed' : 'bg-white text-black'}`}
+                  className={`w-full py-3.5 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2 ${isDeploying ? 'bg-white/50 text-black/50 cursor-not-allowed' : 'bg-white text-black hover:bg-white/90 shadow-sm'}`}
                 >
-                  <div className="absolute inset-0 bg-gradient-to-r from-[var(--color-accent)] to-[var(--color-secondary-accent)] opacity-0 group-hover:opacity-10 transition-opacity" />
-                  <span className="relative z-10 flex items-center justify-center gap-2">
-                    {isDeploying ? (
-                      <>
-                        <Loader2 className="animate-spin" size={20} />
-                        {deployStep}
-                      </>
-                    ) : (
-                      "Deploy Agent to Swarm"
-                    )}
-                  </span>
+                  {isDeploying ? (
+                    <>
+                      <Loader2 className="animate-spin" size={16} />
+                      {deployStep}
+                    </>
+                  ) : (
+                    "Deploy Agent to Swarm"
+                  )}
                 </button>
               )}
               
-              <div className="flex items-center justify-center gap-2 mt-6">
-                <span className="text-sm font-mono text-[#888]">
+              <div className="flex items-center justify-center mt-4">
+                <span className="text-xs text-[#a1a1aa]">
                   {activeTab === "deploy" ? (
-                    <>Deployment requires a <span className="font-bold text-white">10 USDC</span> stake on Ethereum Sepolia.</>
+                    <>Deployment requires a <span className="font-medium text-white">10 USDC</span> stake on Ethereum Sepolia.</>
                   ) : (
-                    <>Updates require a <span className="font-bold text-white">0.001 ETH</span> gas fee on Ethereum Sepolia.</>
+                    <>Updates require a <span className="font-medium text-white">0.001 ETH</span> gas fee on Ethereum Sepolia.</>
                   )}
                 </span>
               </div>

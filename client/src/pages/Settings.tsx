@@ -4,6 +4,7 @@ import { useWallet } from "../hooks/useWallet";
 import { Contract, formatUnits, parseUnits } from "ethers";
 import MockUSDCABI from "../config/MockUSDC.json";
 import { DropdownMenu } from "../components/DropdownMenu";
+import { motion, Variants } from "framer-motion";
 
 const MOCK_USDC_ADDRESS = import.meta.env.VITE_MOCK_USDC_ADDRESS;
 const HIVE_REGISTRY_ADDRESS = import.meta.env.VITE_HIVE_REGISTRY_ADDRESS;
@@ -63,12 +64,12 @@ export default function Settings() {
     }
   };
 
-  const handleApprove = async (amount: string) => {
+  const handleApprove = async (amount: string, isInfinite: boolean = false) => {
     if (!signer || !MOCK_USDC_ADDRESS || !HIVE_REGISTRY_ADDRESS) return;
     setIsApproving(true);
     try {
       const usdcContract = new Contract(MOCK_USDC_ADDRESS, MockUSDCABI.abi, signer);
-      const parsedAmount = parseUnits(amount, 6);
+      const parsedAmount = isInfinite ? 115792089237316195423570985008687907853269984665640564039457584007913129639935n : parseUnits(amount, 6);
       const tx = await usdcContract.approve(HIVE_REGISTRY_ADDRESS, parsedAmount);
       await tx.wait();
       await fetchAllowanceAndBalance();
@@ -120,246 +121,283 @@ export default function Settings() {
     return () => clearTimeout(timeout);
   }, [openaiKey, anthropicKey, rpcUrl, maxFee, delegationMode, personalEndpoint, personalApiKey]);
 
+  // Framer Motion Variants
+  const containerVariants: Variants = {
+    hidden: { opacity: 0 },
+    show: {
+      opacity: 1,
+      transition: { staggerChildren: 0.05 }
+    }
+  };
+
+  const cardVariants: Variants = {
+    hidden: { opacity: 0, y: 10 },
+    show: { opacity: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 30 } }
+  };
+
   return (
-    <div className="w-full h-full p-8 overflow-y-auto custom-scrollbar">
-      <div className="max-w-6xl mx-auto space-y-8">
-        <div className="flex items-center justify-between">
+    <div className="w-full h-full p-4 md:p-8 overflow-y-auto custom-scrollbar">
+      <motion.div 
+        className="max-w-6xl mx-auto space-y-8 pb-12"
+        variants={containerVariants}
+        initial="hidden"
+        animate="show"
+      >
+        {/* Professional Header */}
+        <motion.div variants={cardVariants} className="flex items-center justify-between border-b border-white/10 pb-6">
           <div>
-            <h1 className="text-3xl font-bold text-white tracking-wide flex items-center gap-3">
-              Dashboard Settings
+            <h1 className="text-2xl font-semibold tracking-tight text-white flex items-center gap-2">
+              Settings
             </h1>
-            <p className="text-[#888] mt-2">Manage your protocol preferences, delegation modes, and testnet funds.</p>
+            <p className="text-[#a1a1aa] mt-1.5 text-sm">Manage protocol configurations, models, and allowances.</p>
           </div>
           {isSaved && (
-            <span className="text-sm text-green-400 animate-pulse bg-green-400/10 px-3 py-1.5 rounded-lg border border-green-400/20">
-              Changes Saved Automatically
-            </span>
+            <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }}
+              className="text-[11px] font-medium text-[#10b981] flex items-center gap-1.5"
+            >
+              <div className="w-1.5 h-1.5 rounded-full bg-[#10b981]" />
+              Saved
+            </motion.div>
           )}
-        </div>
+        </motion.div>
 
-        {/* Dynamic Masonry Grid for Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 items-start gap-6">
+        {/* Clean 2-Column Layout with Flex Columns to prevent odd spacing */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
           
-          {/* Card 1: Network & API Configuration */}
-          <div className="bg-[#121214] border border-white/10 rounded-3xl p-6 shadow-xl flex flex-col gap-6">
-            <h3 className="text-lg font-bold text-white border-b border-white/10 pb-3 flex items-center gap-2">
-              <Server size={18} className="text-(--color-accent)" /> 
-              API Configuration
-            </h3>
-            
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 text-xs font-semibold text-[#a1a1aa] tracking-wide ml-1">
-                  <Key size={14} className="text-(--color-accent)" /> OpenAI API Key
-                </label>
-                <input 
-                  type="password" 
-                  value={openaiKey}
-                  onChange={(e) => setOpenaiKey(e.target.value)}
-                  placeholder="sk-..." 
-                  className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-white font-mono text-sm focus:outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)]/50 transition-all"
-                />
+          {/* LEFT COLUMN */}
+          <div className="flex flex-col gap-6">
+            {/* Card 1: Network & API Configuration */}
+            <motion.div variants={cardVariants} className="bg-[#09090b] border border-white/10 rounded-xl overflow-hidden shadow-sm">
+              <div className="px-6 py-5 border-b border-white/5 bg-[#09090b]/50">
+                <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <Server size={15} className="text-[#a1a1aa]" /> 
+                  API Configuration
+                </h3>
               </div>
-
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 text-xs font-semibold text-[#a1a1aa] tracking-wide ml-1">
-                  <Key size={14} className="text-(--color-accent)" /> Anthropic API Key
-                </label>
-                <input 
-                  type="password" 
-                  value={anthropicKey}
-                  onChange={(e) => setAnthropicKey(e.target.value)}
-                  placeholder="sk-ant-..." 
-                  className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-white font-mono text-sm focus:outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)]/50 transition-all"
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Card 2: Delegation Strategy */}
-          <div className="bg-[#121214] border border-white/10 rounded-3xl p-6 shadow-xl flex flex-col gap-6">
-            <h3 className="text-lg font-bold text-white border-b border-white/10 pb-3 flex items-center gap-2">
-              <ShieldCheck size={18} className="text-[#10b981]" /> 
-              Delegation Strategy
-            </h3>
-            
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="flex items-center gap-2 text-xs font-semibold text-[#a1a1aa] tracking-wide ml-1">
-                  Active Mode
-                </label>
-                <DropdownMenu
-                  label="Select Delegation Mode"
-                  value={delegationMode}
-                  onChange={(val) => setDelegationMode(val)}
-                  options={[
-                    { id: "builtin", label: "Built-in AI (Default)" },
-                    { id: "manual", label: "Manual Selection (Pick models in Chat)" },
-                    { id: "personal", label: "Personal AI (BYO-AI)" },
-                    { id: "hired", label: "Hired Orchestrator (On-chain)" }
-                  ]}
-                />
-              </div>
-
-              {delegationMode === "personal" && (
-                <div className="space-y-4 p-4 bg-[var(--color-accent)]/5 border border-[var(--color-accent)]/30 rounded-xl mt-2 animate-[slide-down_0.2s_ease-out]">
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-2 text-xs font-semibold text-[#a1a1aa] tracking-wide ml-1">
-                      Custom Endpoint URL
-                    </label>
-                    <input 
-                      type="text" 
-                      value={personalEndpoint}
-                      onChange={(e) => setPersonalEndpoint(e.target.value)}
-                      placeholder="http://localhost:8000/orchestrate" 
-                      className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-white font-mono text-sm focus:outline-none focus:border-[var(--color-accent)]"
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="flex items-center gap-2 text-xs font-semibold text-[#a1a1aa] tracking-wide ml-1">
-                      Endpoint API Key (Optional)
-                    </label>
-                    <input 
-                      type="password" 
-                      value={personalApiKey}
-                      onChange={(e) => setPersonalApiKey(e.target.value)}
-                      placeholder="sk-..." 
-                      className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-3 text-white font-mono text-sm focus:outline-none focus:border-[var(--color-accent)]"
-                    />
-                  </div>
+              
+              <div className="p-6 space-y-6">
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-[#a1a1aa] flex items-center gap-2">
+                    <Key size={13} className="text-[#a1a1aa]" /> OpenAI API Key
+                  </label>
+                  <input 
+                    type="password" 
+                    value={openaiKey}
+                    onChange={(e) => setOpenaiKey(e.target.value)}
+                    placeholder="sk-..." 
+                    className="w-full bg-[#18181b] border border-white/10 rounded-lg px-4 py-2.5 text-white font-mono text-sm focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/30 transition-all placeholder:text-white/20"
+                  />
                 </div>
-              )}
-            </div>
-          </div>
 
-          {/* Card 3: Testnet Faucet */}
-          <div className="bg-[#121214] border border-white/10 rounded-3xl p-6 shadow-xl flex flex-col gap-6">
-            <h3 className="text-lg font-bold text-white border-b border-white/10 pb-3 flex items-center gap-2">
-              <Coins size={18} className="text-yellow-400" /> 
-              Testnet Faucet
-            </h3>
-            
-            {!isConnected ? (
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-6 text-center shadow-inner">
-                <Wallet className="mx-auto text-[#a1a1aa] mb-4" size={24} />
-                <p className="text-sm text-[#a1a1aa]">Connect your wallet to claim test funds.</p>
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-[#a1a1aa] flex items-center gap-2">
+                    <Key size={13} className="text-[#a1a1aa]" /> Anthropic API Key
+                  </label>
+                  <input 
+                    type="password" 
+                    value={anthropicKey}
+                    onChange={(e) => setAnthropicKey(e.target.value)}
+                    placeholder="sk-ant-..." 
+                    className="w-full bg-[#18181b] border border-white/10 rounded-lg px-4 py-2.5 text-white font-mono text-sm focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/30 transition-all placeholder:text-white/20"
+                  />
+                </div>
               </div>
-            ) : (
-              <div className="space-y-4">
-                <p className="text-sm text-[#a1a1aa]">
-                  HiveFi operates using Mock USDC on Ethereum Sepolia. You can claim 100 USDC every 24 hours to test the protocol.
-                </p>
-                <button
-                  onClick={handleClaimFaucet}
-                  disabled={isClaiming || faucetSuccess}
-                  className="w-full py-3.5 bg-yellow-500/20 hover:bg-yellow-500/30 text-yellow-300 rounded-xl font-bold transition-all border border-yellow-500/50 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isClaiming ? <Loader2 size={18} className="animate-spin" /> : <Coins size={18} />}
-                  {faucetSuccess ? "Successfully Claimed!" : isClaiming ? "Claiming..." : "Claim 100 Test USDC"}
-                </button>
-                <button
-                  onClick={async () => {
-                    if (!window.ethereum) return;
-                    try {
-                      await window.ethereum.request({
-                        method: 'wallet_watchAsset',
-                        params: {
-                          type: 'ERC20',
-                          options: {
-                            address: MOCK_USDC_ADDRESS,
-                            symbol: 'mUSDC',
-                            decimals: 6,
-                          },
-                        },
-                      });
-                    } catch (error) {
-                      console.error('Error importing token:', error);
-                    }
-                  }}
-                  className="w-full py-3.5 bg-white/5 hover:bg-white/10 text-white rounded-xl font-bold transition-all border border-white/10 flex items-center justify-center gap-2"
-                >
-                  <Wallet size={18} />
-                  Import Mock USDC to MetaMask
-                </button>
-                {faucetError && (
-                  <div className="p-3 bg-red-500/20 border border-red-500/50 rounded-xl flex items-start gap-2">
-                    <AlertCircle size={16} className="text-red-400 shrink-0 mt-0.5" />
-                    <span className="text-xs text-red-200">{faucetError}</span>
-                  </div>
+            </motion.div>
+
+            {/* Card 2: Delegation Strategy */}
+            <motion.div variants={cardVariants} className="bg-[#09090b] border border-white/10 rounded-xl overflow-hidden shadow-sm">
+              <div className="px-6 py-5 border-b border-white/5 bg-[#09090b]/50">
+                <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <ShieldCheck size={15} className="text-[#a1a1aa]" /> 
+                  Delegation Strategy
+                </h3>
+              </div>
+              
+              <div className="p-6 space-y-5">
+                <div className="space-y-2">
+                  <label className="text-xs font-medium text-[#a1a1aa]">
+                    Active Mode
+                  </label>
+                  <DropdownMenu
+                    label="Select Delegation Mode"
+                    value={delegationMode}
+                    onChange={(val) => setDelegationMode(val)}
+                    options={[
+                      { id: "builtin", label: "Built-in AI (Default)" },
+                      { id: "manual", label: "Manual Selection (Pick models in Chat)" },
+                      { id: "personal", label: "Personal AI (BYO-AI)" },
+                      { id: "hired", label: "Hired Orchestrator (On-chain)" }
+                    ]}
+                  />
+                </div>
+
+                {delegationMode === "personal" && (
+                  <motion.div 
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    className="space-y-4 pt-2"
+                  >
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-[#a1a1aa]">
+                        Custom Endpoint URL
+                      </label>
+                      <input 
+                        type="text" 
+                        value={personalEndpoint}
+                        onChange={(e) => setPersonalEndpoint(e.target.value)}
+                        placeholder="http://localhost:8000/orchestrate" 
+                        className="w-full bg-[#18181b] border border-white/10 rounded-lg px-4 py-2.5 text-white font-mono text-sm focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/30 transition-all placeholder:text-white/20"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-[#a1a1aa]">
+                        Endpoint API Key (Optional)
+                      </label>
+                      <input 
+                        type="password" 
+                        value={personalApiKey}
+                        onChange={(e) => setPersonalApiKey(e.target.value)}
+                        placeholder="sk-..." 
+                        className="w-full bg-[#18181b] border border-white/10 rounded-lg px-4 py-2.5 text-white font-mono text-sm focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/30 transition-all placeholder:text-white/20"
+                      />
+                    </div>
+                  </motion.div>
                 )}
               </div>
-            )}
+            </motion.div>
           </div>
 
-          {/* Card 4: Spending & Allowances */}
-          <div className="bg-[#121214] border border-white/10 rounded-3xl p-6 shadow-xl flex flex-col gap-6">
-            <h3 className="text-lg font-bold text-white border-b border-white/10 pb-3 flex items-center gap-2">
-              <Wallet size={18} className="text-[#3b82f6]" /> 
-              Spending & Allowances
-            </h3>
-            
-            {!isConnected ? (
-              <div className="bg-white/5 border border-white/10 rounded-2xl p-6 text-center shadow-inner">
-                <Wallet className="mx-auto text-[#a1a1aa] mb-4" size={24} />
-                <p className="text-sm text-[#a1a1aa]">Connect your wallet to manage spending.</p>
+          {/* RIGHT COLUMN */}
+          <div className="flex flex-col gap-6">
+            {/* Card 3: Spending & Allowances */}
+            <motion.div variants={cardVariants} className="bg-[#09090b] border border-white/10 rounded-xl overflow-hidden shadow-sm">
+              <div className="px-6 py-5 border-b border-white/5 bg-[#09090b]/50">
+                <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <Wallet size={15} className="text-[#a1a1aa]" /> 
+                  Spending & Allowances
+                </h3>
               </div>
-            ) : (
-              <div className="space-y-6">
-                <div className="space-y-2">
-                  <label className="flex items-center justify-between text-xs font-semibold text-white/80 uppercase tracking-wide">
-                    <span>Max Fee Per Prompt (USDC)</span>
-                    <span className="text-[var(--color-accent)]">${maxFee}</span>
-                  </label>
-                  <input
-                    type="range"
-                    min="0"
-                    max="10"
-                    step="0.05"
-                    value={maxFee}
-                    onChange={(e) => setMaxFee(e.target.value)}
-                    className="w-full h-2 bg-white/10 rounded-lg appearance-none cursor-pointer accent-[var(--color-accent)]"
-                  />
-                  <div className="flex justify-between text-[10px] text-[#888] font-mono mt-1">
-                    <span>$0.00</span>
-                    <span>$10.00</span>
-                  </div>
+              
+              {!isConnected ? (
+                <div className="p-10 text-center flex flex-col items-center justify-center">
+                  <Wallet className="text-[#a1a1aa] mb-3" size={24} />
+                  <p className="text-sm text-[#a1a1aa]">Connect your wallet to manage protocol spending limits.</p>
                 </div>
-
-                <div className="pt-4 border-t border-white/10 space-y-4">
-                  <div className="flex justify-between items-center bg-white/5 px-4 py-3 rounded-xl border border-white/5">
-                    <span className="text-sm font-medium text-[#a1a1aa]">Wallet Balance</span>
-                    <span className="text-sm font-mono font-bold text-white">{balance !== null ? `${balance} USDC` : "0.00 USDC"}</span>
+              ) : (
+                <div className="p-6 space-y-8">
+                  <div className="space-y-4">
+                    <label className="flex items-center justify-between text-xs font-medium text-[#a1a1aa]">
+                      <span>Max Fee Per Prompt (USDC)</span>
+                      <span className="text-white font-mono bg-[#18181b] px-2 py-0.5 rounded border border-white/10">${maxFee}</span>
+                    </label>
+                    <input
+                      type="range"
+                      min="0"
+                      max="10"
+                      step="0.05"
+                      value={maxFee}
+                      onChange={(e) => setMaxFee(e.target.value)}
+                      className="w-full h-1.5 bg-[#18181b] border border-white/5 rounded-lg appearance-none cursor-pointer accent-white hover:accent-white/90 transition-all outline-none"
+                    />
                   </div>
-                  <div className="flex justify-between items-center bg-white/5 px-4 py-3 rounded-xl border border-white/5">
-                    <span className="text-sm font-medium text-[#a1a1aa]">Current Allowance</span>
-                    <span className="text-sm font-mono font-bold text-white">${allowance} USDC</span>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-[#18181b] border border-white/5 rounded-lg p-4 flex flex-col gap-1">
+                      <span className="text-xs font-medium text-[#a1a1aa]">Wallet Balance</span>
+                      <span className="text-sm font-mono text-white">{balance !== null ? balance : "0.00"} USDC</span>
+                    </div>
+                    <div className="bg-[#18181b] border border-white/5 rounded-lg p-4 flex flex-col gap-1">
+                      <span className="text-xs font-medium text-[#a1a1aa]">Current Allowance</span>
+                      <span className="text-sm font-mono text-white truncate" title={`${allowance} USDC`}>
+                        {allowance && parseFloat(allowance) > 1e10 ? "Unlimited" : `${allowance} USDC`}
+                      </span>
+                    </div>
                   </div>
 
-                  <div className="flex gap-2">
+                  <div className="flex gap-3">
                     <div className="relative flex-1">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#888] font-mono">$</span>
+                      <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[#a1a1aa] font-mono">$</span>
                       <input 
                         type="number" 
                         value={newAllowanceAmount}
                         onChange={(e) => setNewAllowanceAmount(e.target.value)}
-                        className="w-full bg-black/60 border border-white/10 rounded-xl px-4 py-3 pl-8 text-white font-mono text-sm focus:outline-none focus:border-[#10b981]"
+                        className="w-full bg-[#18181b] border border-white/10 rounded-lg pl-8 pr-4 py-2.5 text-white font-mono text-sm focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/30 transition-all"
                       />
                     </div>
                     <button
-                      onClick={() => handleApprove(newAllowanceAmount)}
+                      onClick={() => handleApprove(newAllowanceAmount, false)}
                       disabled={isApproving}
-                      className="px-4 py-3 bg-[#10b981]/20 hover:bg-[#10b981]/30 text-[#10b981] rounded-xl font-medium border border-[#10b981]/50 flex items-center justify-center min-w-[120px] transition-colors disabled:opacity-50"
+                      className="px-6 py-2.5 bg-white text-black hover:bg-white/90 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 flex items-center justify-center min-w-[100px]"
                     >
                       {isApproving ? <Loader2 size={16} className="animate-spin" /> : "Approve"}
                     </button>
+                    <button
+                      onClick={() => handleApprove("0", true)}
+                      disabled={isApproving}
+                      className="px-4 py-2.5 bg-(--color-accent)/10 text-(--color-accent) hover:bg-(--color-accent)/20 border border-(--color-accent)/30 rounded-lg font-medium text-sm transition-colors disabled:opacity-50 flex items-center justify-center whitespace-nowrap"
+                    >
+                      Infinite
+                    </button>
+                  </div>
+
+                  <div className="bg-[#18181b]/50 border border-[#27272a]/50 rounded-lg p-4 text-xs text-[#a1a1aa] leading-relaxed">
+                    <strong className="text-white block mb-1 font-medium">Allowance Mechanics</strong>
+                    <p>
+                      The ERC-20 security standard prevents smart contracts from automatically increasing your allowance after refunding unspent fees. To avoid signing a new approval transaction for every Swarm operation, you can authorize an <strong>Infinite</strong> allowance. The HiveRegistry strictly enforces cryptographic receipts, ensuring only the exact tokens consumed are deducted from your balance.
+                    </p>
                   </div>
                 </div>
+              )}
+            </motion.div>
+
+            {/* Card 4: Testnet Faucet */}
+            <motion.div variants={cardVariants} className="bg-[#09090b] border border-white/10 rounded-xl overflow-hidden shadow-sm">
+              <div className="px-6 py-5 border-b border-white/5 bg-[#09090b]/50">
+                <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+                  <Coins size={15} className="text-[#a1a1aa]" /> 
+                  Testnet Faucet
+                </h3>
               </div>
-            )}
+              
+              {!isConnected ? (
+                <div className="p-10 text-center flex flex-col items-center justify-center">
+                  <Wallet className="text-[#a1a1aa] mb-3" size={24} />
+                  <p className="text-sm text-[#a1a1aa]">Connect your wallet to claim test funds.</p>
+                </div>
+              ) : (
+                <div className="p-6 space-y-5">
+                  <p className="text-sm text-[#a1a1aa] leading-relaxed">
+                    HiveFi operates using Mock USDC on Ethereum Sepolia. You can claim <span className="text-white">100 USDC</span> every 24 hours to test the protocol and deploy agents.
+                  </p>
+                  
+                  <button
+                    onClick={handleClaimFaucet}
+                    disabled={isClaiming || faucetSuccess}
+                    className="w-full py-2.5 bg-[#18181b] hover:bg-[#27272a] text-white rounded-lg text-sm font-medium transition-colors border border-white/10 flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {isClaiming ? <Loader2 size={16} className="animate-spin" /> : <Coins size={16} />}
+                    {faucetSuccess ? "Successfully Claimed!" : isClaiming ? "Claiming..." : "Claim 100 Test USDC"}
+                  </button>
+                  
+                  {faucetError && (
+                    <motion.div 
+                      initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                      className="p-3 bg-red-500/10 border border-red-500/20 rounded-lg flex items-start gap-2"
+                    >
+                      <AlertCircle size={14} className="text-red-400 shrink-0 mt-0.5" />
+                      <span className="text-xs text-red-200">{faucetError}</span>
+                    </motion.div>
+                  )}
+                </div>
+              )}
+            </motion.div>
           </div>
 
         </div>
-      </div>
+      </motion.div>
     </div>
   );
 }
