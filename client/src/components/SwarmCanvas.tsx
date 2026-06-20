@@ -1,7 +1,7 @@
-import { useMemo, useEffect, useState, useRef } from "react";
-import { ReactFlow, Background, BackgroundVariant, useNodesState, useEdgesState, Handle, Position, Node, Edge, ReactFlowProvider, useReactFlow, useNodesInitialized } from "@xyflow/react";
+import { useEffect, useState, useRef } from "react";
+import { ReactFlow, Background, BackgroundVariant, useNodesState, useEdgesState, Handle, Position, Node, Edge, ReactFlowProvider, useReactFlow, useNodesInitialized, useNodes } from "@xyflow/react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Brain, Server, Database, LucideIcon, Maximize2, Minimize2, Monitor } from "lucide-react";
+import { Database, LucideIcon, Maximize2, Minimize2, Monitor, Cpu } from "lucide-react";
 import "@xyflow/react/dist/style.css";
 
 interface CustomNodeData extends Record<string, unknown> {
@@ -19,6 +19,8 @@ interface SwarmCanvasProps {
   activeSpecialists: string[];
   currentExecutingNiche?: string | null;
   mode?: "normal" | "enlarged" | "fullscreen" | "minimized";
+  latestTask?: string;
+  availableModels?: any[];
   onToggleEnlarge?: () => void;
   onToggleFullScreen?: () => void;
 }
@@ -37,7 +39,7 @@ const CustomNode = ({ data }: { data: CustomNodeData }) => {
   return (
     <div className={`custom-node ${pulseClass}`}>
       {data.nodeType !== "orchestrator" && (
-        <Handle type="target" position={Position.Top} id="target-top" />
+        <Handle type="target" position={Position.Top} id="target-top" className="!opacity-0 !w-0 !h-0 !border-0" />
       )}
 
       <div className="flex items-center gap-3">
@@ -61,7 +63,7 @@ const CustomNode = ({ data }: { data: CustomNodeData }) => {
       )}
 
       {data.nodeType !== "specialist" && (
-        <Handle type="source" position={Position.Bottom} id="source-bottom" />
+        <Handle type="source" position={Position.Bottom} id="source-bottom" className="!opacity-0 !w-0 !h-0 !border-0" />
       )}
     </div>
   );
@@ -73,49 +75,24 @@ const nodeTypes = {
 
 function FlowFitter({ 
   mode, 
-  numSpecialists, 
   containerRef 
 }: { 
   mode: string; 
-  numSpecialists: number; 
   containerRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const { fitView } = useReactFlow();
   const nodesInitialized = useNodesInitialized();
+  const nodes = useNodes();
   const debounceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const firstFitDone = useRef(false);
-
-  // 1. Fit view when nodes are initialized or when specialists count changes
+  // 1. Fit view robustly across animation frames
   useEffect(() => {
-    if (nodesInitialized) {
-      if (!firstFitDone.current) {
-        let timeoutId: ReturnType<typeof setTimeout>;
-        const frameId = requestAnimationFrame(() => {
-          timeoutId = setTimeout(() => {
-            fitView({ padding: 0.2, duration: 0 });
-            firstFitDone.current = true;
-          }, 100);
-        });
-        return () => {
-          cancelAnimationFrame(frameId);
-          clearTimeout(timeoutId);
-        };
-      } else {
-        // Instant fit to avoid flash of off-center content
-        fitView({ padding: 0.2, duration: 0 });
-        
-        // Secondary deferred fits to handle font layout shifts or initial rendering cycles
-        const t1 = setTimeout(() => fitView({ padding: 0.2, duration: 0 }), 50);
-        const t2 = setTimeout(() => fitView({ padding: 0.2, duration: 0 }), 150);
-        const t3 = setTimeout(() => fitView({ padding: 0.2, duration: 0 }), 300);
-        return () => {
-          clearTimeout(t1);
-          clearTimeout(t2);
-          clearTimeout(t3);
-        };
-      }
+    if (nodesInitialized && nodes.length > 0) {
+      const timeouts = [50, 200, 550, 800].map(t => 
+        setTimeout(() => fitView({ padding: 0.1, minZoom: 0.5, maxZoom: 1, duration: 400 }), t)
+      );
+      return () => timeouts.forEach(clearTimeout);
     }
-  }, [nodesInitialized, numSpecialists, fitView]);
+  }, [nodes.length, nodesInitialized, fitView, mode]);
 
   // 2. Observe container size changes and trigger fitView when size stabilizes (e.g. after transitions/resizes)
   useEffect(() => {
@@ -123,15 +100,10 @@ function FlowFitter({
     if (!container) return;
 
     const observer = new ResizeObserver(() => {
-      // Clear previous timer during transition/resize
-      if (debounceTimer.current) {
-        clearTimeout(debounceTimer.current);
-      }
-      
-      // Trigger fitView after size stabilizes (100ms after last resize event)
+      if (debounceTimer.current) clearTimeout(debounceTimer.current);
       debounceTimer.current = setTimeout(() => {
-        fitView({ padding: 0.2, duration: 200 });
-      }, 100);
+        fitView({ padding: 0.1, minZoom: 0.5, maxZoom: 1, duration: 400 });
+      }, 50);
     });
 
     observer.observe(container);
@@ -144,72 +116,126 @@ function FlowFitter({
     };
   }, [fitView, containerRef]);
 
-  // 3. Handle panel mode transitions (e.g. normal -> enlarged -> fullscreen)
-  useEffect(() => {
-    fitView({ padding: 0.2, duration: 300 });
-    
-    const timeout = setTimeout(() => {
-      fitView({ padding: 0.2, duration: 300 });
-    }, 350);
-    return () => clearTimeout(timeout);
-  }, [mode, fitView]);
 
   return null;
 }
 
-export default function SwarmCanvas({ executionStep, activeSpecialists, currentExecutingNiche = null, mode = "normal", onToggleEnlarge, onToggleFullScreen }: SwarmCanvasProps) {
+export default function SwarmCanvas({ executionStep, activeSpecialists, currentExecutingNiche = null, mode = "normal", latestTask = "", availableModels = [], onToggleEnlarge, onToggleFullScreen }: SwarmCanvasProps) {
   const [particleAnimation, setParticleAnimation] = useState<"escrow" | "release" | "refund" | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
     if (executionStep === "ESCROW_LOCKED") {
       setParticleAnimation("escrow");
-      const timer = setTimeout(() => setParticleAnimation(null), 1000);
-      return () => clearTimeout(timer);
+      timer = setTimeout(() => setParticleAnimation(null), 1000);
     } else if (executionStep === "FUNDS_RELEASED") {
       setParticleAnimation("release");
-      const timer = setTimeout(() => setParticleAnimation(null), 1000);
-      return () => clearTimeout(timer);
+      timer = setTimeout(() => setParticleAnimation(null), 1000);
     } else if (executionStep === "TASK_REJECTED") {
       setParticleAnimation("refund");
-      const timer = setTimeout(() => setParticleAnimation(null), 1000);
-      return () => clearTimeout(timer);
+      timer = setTimeout(() => setParticleAnimation(null), 1000);
+    } else {
+      setParticleAnimation(null);
     }
+    return () => {
+      if (timer) clearTimeout(timer);
+    };
   }, [executionStep]);
 
   const [nodes, setNodes] = useNodesState<Node<CustomNodeData>>([]);
-  const [edges, setEdges] = useEdgesState([]);
+  const [edges, setEdges] = useEdgesState<Edge>([]);
 
   // Derive full nodes/edges when activeSpecialists changes
   useEffect(() => {
-    const registryPrices: Record<string, string> = { SQL: "0.05", PYTHON: "0.08", FRONTEND: "0.06", DESIGN: "0.04" };
+    const getPrice = (niche: string) => {
+      const model = availableModels.find(m => m.niche.toUpperCase() === niche.toUpperCase());
+      if (model && model.pricePerQuery) return model.pricePerQuery;
+      const fallbackPrices: Record<string, string> = { SQL: "0.05", PYTHON: "0.08", FRONTEND: "0.06", DESIGN: "0.04" };
+      return fallbackPrices[niche.toUpperCase()] || "0.05";
+    };
     
+    // Orchestrator Node
+    const orchestratorNode: Node<CustomNodeData> = {
+      id: "orchestrator",
+      type: "custom",
+      position: { x: 0, y: 0 },
+      data: {
+        label: "ORCHESTRATOR",
+        desc: "Main routing agent",
+        icon: Cpu,
+        nodeType: "orchestrator",
+        isActive: false,
+        status: "normal",
+      },
+    };
+
+    // Blockchain Node
+    const blockchainNode: Node<CustomNodeData> = {
+      id: "blockchain",
+      type: "custom",
+      position: { x: 0, y: 140 },
+      data: {
+        label: "WALLET CONNECTING",
+        desc: "Smart Contract Escrow",
+        icon: Database,
+        nodeType: "blockchain",
+        isActive: false,
+        status: "normal",
+      },
+    };
+
+    const orchestratorEdge: Edge = {
+      id: "e-orch-chain",
+      source: "orchestrator",
+      target: "blockchain",
+      type: "default",
+      animated: true,
+      style: { stroke: "var(--color-accent)", strokeOpacity: 0.3, strokeWidth: 1.5 },
+    };
+
     const specialistNodes: Node<CustomNodeData>[] = activeSpecialists.map((niche, index) => {
       const total = activeSpecialists.length;
       const spacing = 280;
       const totalWidth = (total - 1) * spacing;
       const startX = 0 - totalWidth / 2;
       const x = total === 1 ? 0 : startX + index * spacing;
+      
+      const descText = latestTask ? `"${latestTask.length > 50 ? latestTask.substring(0, 47) + '...' : latestTask}"` : `Fine-tuned ${niche.toLowerCase()} agent`;
 
       return {
         id: `specialist-${niche}`,
         type: "custom",
-        position: { x, y: 160 }, // Moved up since there are no parent nodes above it
+        position: { x, y: 280 },
         data: {
           label: `${niche} SPECIALIST`,
-          desc: `Fine-tuned ${niche.toLowerCase()} agent`,
-          icon: Database,
+          desc: descText,
+          icon: Monitor,
           nodeType: "specialist",
           isActive: false,
           status: "normal",
-          subDesc: `Rate: ${registryPrices[niche] || "0.05"} USDC`,
+          subDesc: `Rate: ${getPrice(niche)} USDC`,
         },
       };
     });
 
-    setNodes(specialistNodes);
-    setEdges([]); // No edges needed since there's no central orchestrator node rendered
-  }, [activeSpecialists, setNodes, setEdges]);
+    const specialistEdges: Edge[] = activeSpecialists.map((niche) => ({
+      id: `e-chain-${niche}`,
+      source: "blockchain",
+      target: `specialist-${niche}`,
+      type: "default",
+      animated: true,
+      style: { stroke: "var(--color-accent)", strokeOpacity: 0.3, strokeWidth: 1.5 },
+    }));
+
+    if (activeSpecialists.length === 0) {
+      setNodes([orchestratorNode]);
+      setEdges([]);
+    } else {
+      setNodes([orchestratorNode, blockchainNode, ...specialistNodes]);
+      setEdges([orchestratorEdge, ...specialistEdges]);
+    }
+  }, [activeSpecialists, latestTask, availableModels, setNodes, setEdges]);
 
   useEffect(() => {
     const executingNiche = currentExecutingNiche || activeSpecialists[activeSpecialists.length - 1] || null;
@@ -248,21 +274,25 @@ export default function SwarmCanvas({ executionStep, activeSpecialists, currentE
     setEdges((eds) =>
       eds.map((edge) => {
         let isGlowing = false;
-        let successGlow = false;
 
-        if (edge.id === "edge-orch-bc") {
-          isGlowing = ["ESCROW_TX_PENDING", "ESCROW_LOCKED", "EVALUATING_RESULT"].includes(executionStep || "");
-          successGlow = executionStep === "TASK_REJECTED";
-        } else if (edge.id.startsWith("edge-bc-spec-")) {
-          const niche = edge.id.replace("edge-bc-spec-", "");
-          const isCurrent = executingNiche === niche;
-          isGlowing = ["EXECUTING_SPECIALIST", "SETTLEMENT_TX_PENDING"].includes(executionStep || "") && isCurrent;
-          successGlow = executionStep === "FUNDS_RELEASED" && isCurrent;
+        if (edge.id === "e-orch-chain") {
+          isGlowing = ["ESCROW_LOCKED", "ESCROW_TX_PENDING", "SETTLEMENT_TX_PENDING", "FUNDS_RELEASED"].includes(executionStep || "");
+        } else if (edge.id.startsWith("e-chain-")) {
+          const niche = edge.id.replace("e-chain-", "");
+          isGlowing =
+            ["EXECUTING_SPECIALIST", "EVALUATING_RESULT"].includes(executionStep || "") &&
+            executingNiche === niche;
         }
 
         return {
           ...edge,
-          className: successGlow ? "glowing-success" : isGlowing ? "glowing" : "",
+          animated: isGlowing || edge.animated,
+          style: {
+            ...edge.style,
+            strokeOpacity: isGlowing ? 1 : 0.6,
+            stroke: isGlowing ? "var(--color-accent)" : "rgba(255,255,255,0.4)",
+            filter: isGlowing ? "drop-shadow(0 0 5px var(--color-accent))" : "none",
+          },
         };
       })
     );
@@ -314,14 +344,15 @@ export default function SwarmCanvas({ executionStep, activeSpecialists, currentE
 
       <div ref={containerRef} className={`relative flex-1 w-full h-full flex flex-col transition-opacity duration-300 ${isMinimized ? "opacity-0 pointer-events-none" : "opacity-100"}`}>
         <ReactFlowProvider>
-          <FlowFitter mode={mode} numSpecialists={activeSpecialists.length} containerRef={containerRef} />
+          <FlowFitter mode={mode} containerRef={containerRef} />
           <ReactFlow
             nodes={nodes}
             edges={edges}
             nodeTypes={nodeTypes}
             fitView
-              fitViewOptions={{ padding: 0.2 }}
-              minZoom={0.1}
+              fitViewOptions={{ padding: 0.1, minZoom: 0.5, maxZoom: 1 }}
+              minZoom={0.2}
+              maxZoom={1.5}
               nodesConnectable={false}
               nodesDraggable={false}
               panOnDrag={false}

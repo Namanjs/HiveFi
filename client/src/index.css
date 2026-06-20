@@ -7,20 +7,40 @@
 }
 
 :root {
-  --color-bg-base: #131314;
-  --color-surface: #1e1f20;
-  --color-border: rgba(255, 255, 255, 0.08);
-  --color-text-primary: #e3e3e3;
-  --color-text-secondary: #c4c7c5;
-  --color-accent: #8b5cf6; /* Default Purple */
-  --color-secondary-accent: #06b6d4; /* Default Cyan */
+  --color-bg-base: #000000;
+  --color-surface: #09090b;
+  --color-border: rgba(255, 255, 255, 0.1);
+  --color-text-primary: #ffffff;
+  --color-text-secondary: #a1a1aa;
+  --color-accent: #ffffff;
+  /* Default Flat Professional Accent */
+  --color-secondary-accent: #a1a1aa;
 }
 
-[data-theme="purple"] { --color-accent: #8b5cf6; --color-secondary-accent: #06b6d4; }
-[data-theme="cyan"] { --color-accent: #06b6d4; --color-secondary-accent: #8b5cf6; }
-[data-theme="emerald"] { --color-accent: #10b981; --color-secondary-accent: #f59e0b; }
-[data-theme="rose"] { --color-accent: #f43f5e; --color-secondary-accent: #3b82f6; }
-[data-theme="amber"] { --color-accent: #f59e0b; --color-secondary-accent: #10b981; }
+[data-theme="purple"] {
+  --color-accent: #8b5cf6;
+  --color-secondary-accent: #06b6d4;
+}
+
+[data-theme="cyan"] {
+  --color-accent: #06b6d4;
+  --color-secondary-accent: #8b5cf6;
+}
+
+[data-theme="emerald"] {
+  --color-accent: #10b981;
+  --color-secondary-accent: #f59e0b;
+}
+
+[data-theme="rose"] {
+  --color-accent: #f43f5e;
+  --color-secondary-accent: #3b82f6;
+}
+
+[data-theme="amber"] {
+  --color-accent: #f59e0b;
+  --color-secondary-accent: #10b981;
+}
 
 body {
   margin: 0;
@@ -33,8 +53,9 @@ body {
   color: var(--color-text-primary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-image: radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--color-accent) 15%, transparent), transparent 50%);
-  background-attachment: fixed;
+  background-image: radial-gradient(circle at center, color-mix(in srgb, var(--color-accent) 10%, transparent) 0%, transparent 60%);
+  background-size: 150% 150%;
+  animation: bg-shift 15s ease-in-out infinite alternate;
 }
 
 ::selection {
@@ -43,23 +64,51 @@ body {
 }
 
 @keyframes swarm-line-flow {
-  to { stroke-dashoffset: -24; }
+  to {
+    stroke-dashoffset: -24;
+  }
 }
 
 @keyframes swarm-hub-pulse {
-  0%, 100% { opacity: 0.4; transform: scale(1); }
-  50% { opacity: 0.75; transform: scale(1.06); }
+
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.75;
+    transform: scale(1.06);
+  }
 }
 
 @keyframes swarm-node-in {
-  from { opacity: 0; transform: scale(0.85); }
-  to { opacity: 1; transform: scale(1); }
+  from {
+    opacity: 0;
+    transform: scale(0.85);
+  }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 
 @keyframes swarm-data-pulse {
-  0% { stroke-dashoffset: 72; opacity: 0.35; }
-  50% { opacity: 1; }
-  100% { stroke-dashoffset: 0; opacity: 0.35; }
+  0% {
+    stroke-dashoffset: 72;
+    opacity: 0.35;
+  }
+
+  50% {
+    opacity: 1;
+  }
+
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0.35;
+  }
 }
 
 .swarm-tour-data-line {
@@ -90,8 +139,13 @@ body {
 }
 
 @keyframes bg-shift {
-  0% { background-position: 0% 0%; }
-  100% { background-position: 100% 100%; }
+  0% {
+    background-position: 0% 0%;
+  }
+
+  100% {
+    background-position: 100% 100%;
+  }
 }
 
 /* Scrollbar styling */
@@ -99,13 +153,16 @@ body {
   width: 4px;
   height: 4px;
 }
+
 ::-webkit-scrollbar-track {
   background: transparent;
 }
+
 ::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
   border-radius: 2px;
 }
+
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.2);
 }
@@ -195,7 +252,7 @@ body {
 
 .custom-node.active-pulse {
   border-color: var(--color-accent);
-  box-shadow: 0 0 20px var(--color-accent-glow), inset 0 0 10px rgba(139, 92, 246, 0.1);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--color-accent) 25%, transparent), inset 0 0 10px color-mix(in srgb, var(--color-accent) 15%, transparent);
 }
 
 .custom-node.active-success {
@@ -215,9 +272,17 @@ body {
 }
 
 @keyframes pulse-offline {
-  0% { box-shadow: 0 0 20px rgba(251, 146, 60, 0.15), inset 0 0 10px rgba(251, 146, 60, 0.05); }
-  50% { box-shadow: 0 0 30px rgba(251, 146, 60, 0.3), inset 0 0 15px rgba(251, 146, 60, 0.1); }
-  100% { box-shadow: 0 0 20px rgba(251, 146, 60, 0.15), inset 0 0 10px rgba(251, 146, 60, 0.05); }
+  0% {
+    box-shadow: 0 0 20px rgba(251, 146, 60, 0.15), inset 0 0 10px rgba(251, 146, 60, 0.05);
+  }
+
+  50% {
+    box-shadow: 0 0 30px rgba(251, 146, 60, 0.3), inset 0 0 15px rgba(251, 146, 60, 0.1);
+  }
+
+  100% {
+    box-shadow: 0 0 20px rgba(251, 146, 60, 0.15), inset 0 0 10px rgba(251, 146, 60, 0.05);
+  }
 }
 
 /* React Flow Handle custom nodes positioning */
@@ -251,18 +316,28 @@ body {
 }
 
 @keyframes edge-flow {
-  from { stroke-dashoffset: 14; }
-  to { stroke-dashoffset: 0; }
+  from {
+    stroke-dashoffset: 14;
+  }
+
+  to {
+    stroke-dashoffset: 0;
+  }
 }
 
 /* Loading shimmer animation */
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 @utility animate-shimmer {
-  background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%);
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.03) 25%, rgba(255, 255, 255, 0.08) 50%, rgba(255, 255, 255, 0.03) 75%);
   background-size: 200% 100%;
   animation: shimmer 2.5s infinite linear;
 }
@@ -272,8 +347,15 @@ body {
 }
 
 @keyframes slide-up {
-  from { opacity: 0; transform: translateY(10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Coin Drop Animation for Swarm */
@@ -289,7 +371,9 @@ body {
 }
 
 /* Custom Tooltip */
-[data-tooltip], [data-tooltip-bottom], [data-tooltip-bottom-right] {
+[data-tooltip],
+[data-tooltip-bottom],
+[data-tooltip-bottom-right] {
   position: relative;
 }
 
@@ -314,7 +398,7 @@ body {
   visibility: hidden;
   transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   z-index: 100000;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }

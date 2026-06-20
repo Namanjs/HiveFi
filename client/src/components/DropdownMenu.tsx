@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDown, Check } from "lucide-react";
 
@@ -31,7 +31,7 @@ export function DropdownMenu({ label, options, value, onChange, disabled, placem
       }
     }
     
-    function handleScroll(e: Event) {
+    function handleScroll() {
       // Close if scrolling happens outside the dropdown itself
       if (isOpen && containerRef.current) {
         setIsOpen(false);
@@ -60,12 +60,12 @@ export function DropdownMenu({ label, options, value, onChange, disabled, placem
   };
 
   return (
-    <div className="relative inline-block text-left" ref={containerRef}>
+    <div className="relative w-full text-left" ref={containerRef}>
       <button
         type="button"
         disabled={disabled}
         onClick={toggleDropdown}
-        className="inline-flex justify-between items-center w-full min-w-[200px] rounded-md border border-white/10 bg-[#121214] px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-[#1a1a1c] focus:outline-none focus:ring-1 focus:ring-[var(--color-accent)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        className="inline-flex justify-between items-center w-full min-w-[200px] rounded-lg border border-white/10 bg-[#18181b] px-4 py-2.5 text-sm text-white focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/30 transition-all hover:border-white/30 disabled:opacity-50 disabled:cursor-not-allowed"
       >
         <span className="truncate">{selectedOption ? selectedOption.label : label}</span>
         <ChevronDown className="-mr-1 ml-2 h-4 w-4 opacity-50" aria-hidden="true" />
@@ -74,7 +74,7 @@ export function DropdownMenu({ label, options, value, onChange, disabled, placem
       {isOpen && createPortal(
         <div 
           ref={menuRef}
-          className={`fixed z-[9999] w-max rounded-md bg-[#1a1a1c] shadow-[0_4px_20px_rgba(0,0,0,0.8)] ring-1 ring-black ring-opacity-5 focus:outline-none border border-white/10 animate-in fade-in zoom-in-95 duration-100 ${
+          className={`fixed z-[9999] w-max rounded-lg bg-[#09090b] shadow-lg ring-1 ring-black ring-opacity-5 focus:outline-none border border-white/10 animate-in fade-in zoom-in-95 duration-100 ${
             placement === "top" ? "-translate-y-full origin-bottom-left" : "origin-top-left"
           }`}
           style={{
@@ -95,8 +95,8 @@ export function DropdownMenu({ label, options, value, onChange, disabled, placem
                     onChange(option.id);
                     setIsOpen(false);
                   }}
-                  className={`w-full text-left flex items-center px-4 py-2 text-sm transition-colors hover:bg-white/5 hover:text-white ${
-                    isSelected ? "bg-[var(--color-accent)]/10 text-[var(--color-accent)]" : "text-white/80"
+                  className={`w-full text-left flex items-center px-4 py-2 text-sm transition-colors hover:bg-white/10 hover:text-white ${
+                    isSelected ? "bg-white/10 text-white" : "text-[#a1a1aa]"
                   }`}
                 >
                   <span className="flex-1 text-left whitespace-normal break-words">

@@ -1,7 +1,7 @@
 import { Wallet, Activity, Palette, Unplug } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useWallet } from "../hooks/useWallet";
-import AnimatedBalance from "./AnimatedBalance";
+import { useLocation } from "react-router-dom";
 
 interface EarningsBarProps {
   isConnected: boolean;
@@ -15,6 +15,8 @@ export default function EarningsBar({
   onToggleAbstraction,
 }: EarningsBarProps) {
   const { address, isConnected: isWalletConnected, isConnecting, connectWallet, disconnectWallet } = useWallet();
+  const location = useLocation();
+  const isMainPage = location.pathname === "/";
 
   const [theme, setTheme] = useState<string>(localStorage.getItem("theme") || "purple");
   const [showThemes, setShowThemes] = useState(false);
@@ -47,14 +49,14 @@ export default function EarningsBar({
 
         {/* Theme Selector */}
         <div className="flex items-center bg-black/40 backdrop-blur-3xl rounded-full border border-white/10 shadow-[0_4px_20px_rgba(0,0,0,0.3)] transition-all overflow-hidden p-1">
-          <button 
+          <button
             onClick={() => setShowThemes(!showThemes)}
             className="flex items-center justify-center w-7 h-7 rounded-full hover:bg-white/10 transition-colors shrink-0"
             data-tooltip="Choose Theme"
           >
             <Palette size={14} className="text-white/70" />
           </button>
-          
+
           <div className={`flex items-center transition-all duration-500 smooth-spring overflow-hidden ${showThemes ? "w-[120px] opacity-100 ml-2" : "w-0 opacity-0 ml-0"}`}>
             <div className="flex items-center gap-2 min-w-max">
               {themes.map((t) => (
@@ -76,7 +78,7 @@ export default function EarningsBar({
             <span className="text-xs font-mono text-white/90">
               {address.substring(0, 6)}...{address.substring(address.length - 4)}
             </span>
-            <button 
+            <button
               onClick={disconnectWallet}
               className="ml-2 p-1 rounded-lg hover:bg-white/10 text-[#888] hover:text-red-400 transition-colors"
               data-tooltip="Disconnect Wallet"
@@ -85,7 +87,7 @@ export default function EarningsBar({
             </button>
           </div>
         ) : (
-          <button 
+          <button
             onClick={connectWallet}
             disabled={isConnecting}
             className="relative group flex items-center gap-2 px-5 py-2 bg-gradient-to-r from-[var(--color-accent)] to-[var(--color-secondary-accent)] rounded-xl font-bold text-sm text-black shadow-[0_0_20px_rgba(255,255,255,0.1)] hover:scale-105 transition-all smooth-spring overflow-hidden"
@@ -96,13 +98,12 @@ export default function EarningsBar({
           </button>
         )}
 
-        <button 
+        <button
           onClick={onToggleAbstraction}
-          className={`px-4 py-2 rounded-xl border transition-all text-xs font-semibold tracking-wider uppercase flex items-center gap-2 ${
-            showAbstraction 
-              ? "bg-[var(--color-accent)]/20 border-[var(--color-accent)]/30 text-[var(--color-accent)] shadow-[0_0_15px_var(--color-accent-glow)]" 
+          className={`px-4 py-2 rounded-xl border transition-all text-xs font-semibold tracking-wider uppercase flex items-center gap-2 ${showAbstraction
+              ? "bg-[var(--color-accent)]/20 border-[var(--color-accent)]/30 text-[var(--color-accent)] shadow-[0_0_15px_var(--color-accent-glow)]"
               : "bg-white/5 border-white/10 text-[var(--color-text-secondary)] hover:bg-white/10 hover:text-white"
-          }`}
+            }`}
         >
           <Activity size={14} />
           {showAbstraction ? "Hide Network" : "View Network"}
