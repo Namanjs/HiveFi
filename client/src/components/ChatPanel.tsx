@@ -1,9 +1,7 @@
 import { useState, useRef, useEffect, FormEvent, useMemo } from "react";
-import { Send, Square, ArrowDown, Copy, Check, Hexagon } from "lucide-react";
-import HowSwarmWorksModal from "./HowSwarmWorksModal";
-import { DropdownMenu } from "./DropdownMenu";
+import { Send, Square, ArrowDown, Copy, Check } from "lucide-react";
 import { IntentAnalysisMessage } from "./IntentAnalysisMessage";
-import ExecutionStrip from "./ExecutionStrip";
+import { useChat } from "../contexts/ChatContext";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -19,6 +17,12 @@ const CodeBlockRenderer = ({ node, className, children, ...props }: any) => {
     setTimeout(() => setCopied(false), 2000);
   };
 
+  let lang = match ? match[1].toLowerCase() : '';
+  if (lang === 'frontend') lang = 'tsx';
+  else if (lang === 'design') lang = 'css';
+  else if (lang === 'sql') lang = 'sql';
+  else if (lang === 'python') lang = 'python';
+
   return match ? (
     <div className="rounded-xl overflow-hidden bg-[#0d0d0f] border border-white/5 shadow-xl max-w-full my-5 group/code">
       <div className="bg-white/2 px-4 py-2 text-xs text-white/40 border-b border-white/5 font-mono uppercase tracking-wider flex items-center justify-between">
@@ -28,20 +32,25 @@ const CodeBlockRenderer = ({ node, className, children, ...props }: any) => {
           <span>{copied ? "Copied" : "Copy code"}</span>
         </button>
       </div>
-      <div className="overflow-x-auto max-w-full scrollbar-thin [&::-webkit-scrollbar]:h-2 [&::-webkit-scrollbar-thumb]:bg-white/10 [&::-webkit-scrollbar-thumb]:rounded-full">
+      <div className="w-full">
         <SyntaxHighlighter
           {...props}
           style={vscDarkPlus}
-          language={match[1]}
+          language={lang}
           PreTag="div"
+          wrapLines={true}
+          wrapLongLines={true}
+          lineProps={{ style: { whiteSpace: 'pre-wrap', wordBreak: 'break-all' } }}
           customStyle={{ 
             margin: 0, 
             padding: '16px', 
             fontSize: '13px', 
             fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace', 
             background: 'transparent', 
-            minWidth: '100%', 
-            lineHeight: '1.5' 
+            width: '100%', 
+            lineHeight: '1.5',
+            whiteSpace: 'pre-wrap',
+            wordBreak: 'break-all'
           }}
         >
           {String(children).replace(/\n$/, '')}
@@ -144,36 +153,27 @@ interface ChatPanelProps {
   onExecutePrompt?: (nicheModels: Record<string, string>, maxFee?: number) => void;
 }
 
-export default function ChatPanel({ messages, onSendMessage, isLoading, executionStep = null, currentNiche = null, ratingPrompt, onRate, onCancel, pendingIntent, onExecutePrompt }: ChatPanelProps) {
-  const [input, setInput] = useState("");
+export default function ChatPanel({ messages, onSendMessage, isLoading, ratingPrompt, onRate, onCancel, pendingIntent, onExecutePrompt }: ChatPanelProps) {
+  const {
+    input,
+    setInput,
+    activeStreamIndex,
+    setActiveStreamIndex,
+    availableModels,
+    selectedModels,
+    setSelectedModels
+  } = useChat();
+
   const [maxFee, setMaxFee] = useState<number>(() => {
     return parseFloat(localStorage.getItem("max_fee") || "2.00");
   });
-  const [showHowItWorks, setShowHowItWorks] = useState(false);
   const [showScrollBottom, setShowScrollBottom] = useState(false);
-  const [activeStreamIndex, setActiveStreamIndex] = useState<number | null>(null);
-  const [availableModels, setAvailableModels] = useState<any[]>([]);
-  const [selectedModels, setSelectedModels] = useState<Record<string, string>>({});
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    fetch(`${import.meta.env.VITE_API_URL || "http://localhost:8000"}/api/registry`)
-      .then(res => res.json())
-      .then(data => {
-        if (data.success && data.specialists) {
-          // Filter duplicates, keeping only the latest version of each model name
-          const uniqueModels = new Map();
-          data.specialists.forEach((m: any) => {
-            uniqueModels.set(m.name, m);
-          });
-          setAvailableModels(Array.from(uniqueModels.values()));
-        }
-      })
-      .catch(console.error);
-      
     // Listen for cross-component storage updates (like from SettingsModal)
     const handleStorageChange = () => {
       const stored = parseFloat(localStorage.getItem("max_fee") || "2.00");
@@ -195,22 +195,6 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, executio
     }
   }, [maxFee]);
 
-  useEffect(() => {
-    if (pendingIntent && pendingIntent.chain) {
-      const newSelected: Record<string, string> = {};
-      pendingIntent.chain.forEach((step: any) => {
-        const niche = step.niche.toUpperCase();
-        if (!newSelected[niche]) {
-          const matchingModels = availableModels.filter(m => m.niche.toUpperCase() === niche);
-          if (matchingModels.length > 0) {
-            newSelected[niche] = matchingModels[0].id;
-          }
-        }
-      });
-      setSelectedModels(newSelected);
-    }
-  }, [pendingIntent, availableModels]);
-
   const handleScroll = () => {
     if (!scrollContainerRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = scrollContainerRef.current;
@@ -223,20 +207,7 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, executio
     container.scrollTo({ top: container.scrollHeight, behavior });
   };
 
-  const suggestedPrompts = useMemo(() => {
-    const allPrompts = [
-      { title: "Explain a Concept", text: "Explain quantum computing to me like I am 5 years old using a simple analogy." },
-      { title: "Python Script", text: "Write a simple Python script to read a CSV file and print the total number of rows." },
-      { title: "Draft an Email", text: "Write a professional email to my team announcing that our new product launch is delayed by two weeks." },
-      { title: "React Component", text: "Build a modern, responsive button component in React using Tailwind CSS." },
-      { title: "Fix my Code", text: "I have a Javascript function that is throwing a 'TypeError: undefined is not an object'. How do I fix this?" },
-      { title: "Creative Writing", text: "Write a short sci-fi story about an astronaut who discovers a glowing door on the moon." },
-      { title: "SQL Query", text: "Write a SQL query to find the top 5 customers who spent the most money last month." },
-      { title: "Brainstorm Ideas", text: "Give me 10 creative marketing ideas to promote a new coffee shop in a busy city." },
-      { title: "Translation", text: "Translate the phrase 'Welcome to the future of decentralized AI' into Spanish, French, and Japanese." }
-    ];
-    return allPrompts.sort(() => 0.5 - Math.random()).slice(0, 3);
-  }, []);
+
 
   const welcomeMessage = useMemo(() => {
     const messages = [
@@ -257,17 +228,7 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, executio
     container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
   }, [messages, isLoading, activeStreamIndex]);
 
-  useEffect(() => {
-    if (messages.length > 0 && messages[messages.length - 1].sender === "assistant") {
-      setActiveStreamIndex(messages.length - 1);
-    } else {
-      setActiveStreamIndex(null);
-    }
-  }, [messages.length]);
-
   const isExecutionActive = isLoading || activeStreamIndex !== null;
-
-  const showExecutionStrip = false;
 
   const handleSubmit = (e?: FormEvent) => {
     if (e) e.preventDefault();
@@ -333,16 +294,11 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, executio
               </div>
               <div className="flex-1 min-w-0 flex flex-col items-start gap-3">
                 <div className="font-semibold text-white text-[15px]">HiveFi</div>
-                {showExecutionStrip && (
-                  <ExecutionStrip executionStep={executionStep} currentNiche={currentNiche} />
-                )}
-                {!showExecutionStrip && (
-                  <div className="flex items-center gap-1.5 h-6">
-                    <div className="w-2.5 h-2.5 rounded-full bg-(--color-accent)/80 animate-bounce [animation-delay:0ms]"></div>
-                    <div className="w-2.5 h-2.5 rounded-full bg-(--color-accent)/80 animate-bounce [animation-delay:150ms]"></div>
-                    <div className="w-2.5 h-2.5 rounded-full bg-(--color-accent)/80 animate-bounce [animation-delay:300ms]"></div>
-                  </div>
-                )}
+                <div className="flex items-center gap-1.5 h-6">
+                  <div className="w-2.5 h-2.5 rounded-full bg-(--color-accent)/80 animate-bounce [animation-delay:0ms]"></div>
+                  <div className="w-2.5 h-2.5 rounded-full bg-(--color-accent)/80 animate-bounce [animation-delay:150ms]"></div>
+                  <div className="w-2.5 h-2.5 rounded-full bg-(--color-accent)/80 animate-bounce [animation-delay:300ms]"></div>
+                </div>
               </div>
           </div>
         )}
@@ -393,46 +349,16 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, executio
         </button>
       )}
 
-      {/* Empty State / Center Screen */}
-      {messages.length === 0 && (
-        <div className="flex-1 flex flex-col items-center justify-center -mt-10 px-4">
-          <h1 className="text-4xl md:text-5xl font-medium tracking-tight mb-10 text-transparent bg-clip-text bg-linear-to-r from-white via-white/80 to-white/40 text-center pb-2 drop-shadow-sm">
-            {welcomeMessage}
-          </h1>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 w-full max-w-4xl">
-            {suggestedPrompts.map((prompt, idx) => (
-              <button
-                key={idx}
-                onClick={() => {
-                  setInput(prompt.text);
-                  if (textareaRef.current) {
-                    textareaRef.current.value = prompt.text;
-                    textareaRef.current.style.height = "auto";
-                    textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
-                  }
-                }}
-                className="group flex flex-col text-left bg-white/5 hover:bg-white/10 border border-white/5 hover:border-(--color-accent)/50 p-5 rounded-2xl transition-all duration-300 hover:-translate-y-1 hover:shadow-[0_10px_20px_rgba(0,0,0,0.2)]"
-              >
-                <h3 className="text-white/90 font-semibold mb-2 group-hover:text-(--color-accent) transition-colors">{prompt.title}</h3>
-                <p className="text-white/40 text-xs leading-relaxed group-hover:text-white/60 transition-colors line-clamp-2">{prompt.text}</p>
-              </button>
-            ))}
+      {/* Input Area (Centered if empty, Bottom Fixed if active) */}
+      <div className={`w-full max-w-4xl 2xl:max-w-5xl mx-auto transition-all duration-700 ease-[cubic-bezier(0.23,1,0.32,1)] relative ${messages.length === 0 ? "flex-1 flex flex-col justify-center px-4 md:px-8" : "p-4 md:px-8 mt-auto"}`}>
+        
+        {messages.length === 0 && (
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[150px] w-full px-4">
+            <h1 className="text-4xl md:text-5xl font-medium tracking-tight text-transparent bg-clip-text bg-linear-to-r from-white via-white/80 to-white/40 text-center pb-2 drop-shadow-sm">
+              {welcomeMessage}
+            </h1>
           </div>
-          <button 
-            type="button"
-            onClick={() => setShowHowItWorks(true)}
-            className="mt-12 text-sm font-medium text-white/40 hover:text-(--color-accent) flex items-center gap-2.5 transition-all border border-white/10 hover:border-(--color-accent)/40 rounded-full px-5 py-2.5 bg-white/5 hover:bg-(--color-accent)/10 backdrop-blur-sm"
-          >
-            <Hexagon size={16} className="text-(--color-accent)/70" />
-            How does the Swarm work?
-          </button>
-        </div>
-      )}
-
-      <HowSwarmWorksModal open={showHowItWorks} onClose={() => setShowHowItWorks(false)} />
-
-      {/* Input Area (Bottom Fixed or Centered if empty) */}
-      <div className={`p-4 w-full max-w-3xl mx-auto transition-all duration-500 ease-in-out ${messages.length === 0 ? "mt-4" : ""}`}>
+        )}
         
         {/* Delegation Strategy Indicator */}
         {localStorage.getItem("delegation_mode") === "manual" && (
@@ -445,7 +371,7 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, executio
                   // force re-render Hack
                   setInput(input + " "); setTimeout(() => setInput(input), 0);
                 }}
-                className="bg-[#1a1a1c]/80 backdrop-blur-xl border border-white/20 rounded-2xl pl-4 pr-10 py-2.5 text-sm text-white font-medium focus:outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)]/50 appearance-none cursor-pointer transition-all shadow-[0_4px_15px_rgba(0,0,0,0.3)] hover:border-[var(--color-accent)]/70"
+                className="bg-[#18181b] border border-white/10 rounded-lg pl-4 pr-10 py-2.5 text-sm text-white focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/30 appearance-none cursor-pointer transition-all hover:border-white/30"
               >
                 <option value="" disabled className="bg-[#121214]">Select a model...</option>
                 {availableModels.map(m => (
@@ -462,7 +388,7 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, executio
         <form onSubmit={handleSubmit} className="flex gap-3 relative group w-full">
           <textarea
             ref={textareaRef}
-            className="flex-1 bg-[#1a1a1c]/80 backdrop-blur-xl border border-white/10 rounded-3xl px-8 py-5 pr-16 text-base text-white placeholder-white/40 focus:outline-none focus:border-(--color-accent)/50 focus:ring-1 focus:ring-(--color-accent)/50 focus:shadow-[0_0_30px_rgba(139,92,246,0.15)] transition-all shadow-[0_4px_20px_rgba(0,0,0,0.5)] resize-none overflow-y-auto min-h-[64px] max-h-[200px] scrollbar-none [&::-webkit-scrollbar]:hidden"
+            className="flex-1 bg-[#18181b] border border-white/10 rounded-2xl px-6 py-4 pr-16 text-base text-white placeholder-white/30 focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/30 transition-all resize-none overflow-y-auto min-h-[60px] max-h-[200px] scrollbar-none [&::-webkit-scrollbar]:hidden"
             placeholder="Enter command..."
             value={input}
             onChange={(e) => {
@@ -489,12 +415,12 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, executio
             }}
             aria-label={isExecutionActive ? "Stop response" : "Send message"}
             title={isExecutionActive ? "Stop response" : "Send message"}
-            className={`absolute right-3 top-1/2 -translate-y-1/2 p-3 rounded-full transition-all duration-300 flex items-center justify-center ${
+            className={`absolute right-3 top-1/2 -translate-y-1/2 p-2.5 rounded-xl transition-all duration-300 flex items-center justify-center ${
               isExecutionActive 
                 ? "bg-white/10 text-white hover:bg-red-500/80 cursor-pointer" 
                 : !input.trim() 
                   ? "bg-white/5 text-white/30 cursor-not-allowed" 
-                  : "bg-(--color-accent) text-white hover:scale-105 cursor-pointer shadow-[0_0_15px_var(--color-accent)]"
+                  : "bg-white text-black hover:bg-white/90 cursor-pointer shadow-sm"
             }`}
             disabled={!isExecutionActive && !input.trim()}
           >
@@ -512,35 +438,21 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, executio
               <button 
                 type="button"
                 onClick={() => setMaxFee(prev => Math.max(0.001, parseFloat((prev - 0.01).toFixed(3))))}
-                aria-label="Decrease maximum fee"
-                title="Decrease maximum fee"
                 className="text-white/40 hover:text-(--color-accent) hover:bg-(--color-accent)/10 w-5 h-5 flex items-center justify-center rounded transition-colors pb-0.5"
-              >
-                -
-              </button>
+              >-</button>
               <input 
                 type="number" 
-                step="0.001"
-                min="0.001"
-                max="50"
-                value={maxFee}
-                id="max-fee-input"
-                aria-label="Maximum fee in USDC"
-                title="Maximum fee in USDC"
+                step="0.001" min="0.001" max="50" value={maxFee}
                 size={Math.max(4, maxFee.toString().length + 1)}
                 onChange={(e) => setMaxFee(parseFloat(e.target.value) || 0)}
                 onBlur={(e) => setMaxFee(Math.min(50, Math.max(0.001, parseFloat(e.target.value) || 0.001)))}
-                className="fee-input bg-transparent text-white text-center outline-none font-mono [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none min-w-[32px] max-w-[100px]"
+                className="fee-input bg-transparent text-white text-center outline-none font-mono [appearance:textfield] min-w-[32px] max-w-[100px]"
               />
               <button 
                 type="button"
                 onClick={() => setMaxFee(prev => parseFloat((prev + 0.01).toFixed(3)))}
-                aria-label="Increase maximum fee"
-                title="Increase maximum fee"
                 className="text-white/40 hover:text-(--color-accent) hover:bg-(--color-accent)/10 w-5 h-5 flex items-center justify-center rounded transition-colors pb-0.5"
-              >
-                +
-              </button>
+              >+</button>
             </div>
             <span>USDC</span>
           </div>
@@ -548,6 +460,8 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, executio
             HiveFi Orchestrator may make mistakes. Verify transactions.
           </div>
         </div>
+
+
       </div>
     </div>
   );

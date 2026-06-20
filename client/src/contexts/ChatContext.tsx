@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useRef, useMemo, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, useRef, ReactNode } from "react";
 import { io, Socket } from "socket.io-client";
 import { useWallet } from "../hooks/useWallet";
 
@@ -30,6 +30,14 @@ interface ChatContextType {
   isFullScreen: boolean;
   pendingIntent: any;
   pendingPrompt: string;
+  input: string;
+  setInput: React.Dispatch<React.SetStateAction<string>>;
+  activeStreamIndex: number | null;
+  setActiveStreamIndex: React.Dispatch<React.SetStateAction<number | null>>;
+  availableModels: any[];
+  setAvailableModels: React.Dispatch<React.SetStateAction<any[]>>;
+  selectedModels: Record<string, string>;
+  setSelectedModels: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   setMessages: React.Dispatch<React.SetStateAction<Message[]>>;
   setEvents: React.Dispatch<React.SetStateAction<LogEvent[]>>;
   setExecutionStep: React.Dispatch<React.SetStateAction<string | null>>;
@@ -70,7 +78,51 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [pendingIntent, setPendingIntent] = useState<any>(null);
   const [pendingPrompt, setPendingPrompt] = useState<string>("");
 
+  const [input, setInput] = useState<string>("");
+  const [activeStreamIndex, setActiveStreamIndex] = useState<number | null>(null);
+  const [availableModels, setAvailableModels] = useState<any[]>([]);
+  const [selectedModels, setSelectedModels] = useState<Record<string, string>>({});
+
   const abortControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/registry`)
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success && data.specialists) {
+          const uniqueModels = new Map();
+          data.specialists.forEach((m: any) => {
+            uniqueModels.set(m.name, m);
+          });
+          setAvailableModels(Array.from(uniqueModels.values()));
+        }
+      })
+      .catch(console.error);
+  }, []);
+
+  useEffect(() => {
+    if (pendingIntent && pendingIntent.chain) {
+      const newSelected: Record<string, string> = {};
+      pendingIntent.chain.forEach((step: any) => {
+        const niche = step.niche.toUpperCase();
+        if (!newSelected[niche]) {
+          const matchingModels = availableModels.filter(m => m.niche.toUpperCase() === niche);
+          if (matchingModels.length > 0) {
+            newSelected[niche] = matchingModels[0].id;
+          }
+        }
+      });
+      setSelectedModels(newSelected);
+    }
+  }, [pendingIntent, availableModels]);
+
+  useEffect(() => {
+    if (messages.length > 0 && messages[messages.length - 1].sender === "assistant") {
+      setActiveStreamIndex(messages.length - 1);
+    } else {
+      setActiveStreamIndex(null);
+    }
+  }, [messages.length]);
 
   useEffect(() => {
     const socketInstance: Socket = io(API_BASE, {
@@ -328,6 +380,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     isFullScreen,
     pendingIntent,
     pendingPrompt,
+    input,
+    setInput,
+    activeStreamIndex,
+    setActiveStreamIndex,
+    availableModels,
+    setAvailableModels,
+    selectedModels,
+    setSelectedModels,
     setMessages,
     setEvents,
     setExecutionStep,

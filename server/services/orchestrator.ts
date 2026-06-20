@@ -4,6 +4,7 @@ import { Socket } from "socket.io";
 import * as registry from "./registry";
 import type { SpecialistInfo } from "./registry";
 import * as taskHistory from "./taskHistory";
+import { ethers } from "ethers";
 
 export interface OrchestrationResult {
   delegate: boolean;
@@ -67,7 +68,7 @@ async function orchestrateChain(
 
     // Evaluate
     socket.emit("STATUS_UPDATE", { status: "EVALUATING_RESULT", niche });
-    const evaluation = await llm.evaluateResult(niche, specResponse.result);
+    const evaluation = await llm.evaluateResult(step.sub_prompt, niche, specResponse.result);
 
     if (evaluation === "YES") {
       socket.emit("STATUS_UPDATE", { status: "SETTLEMENT_TX_PENDING", niche });
@@ -81,9 +82,9 @@ async function orchestrateChain(
         status: 'approved',
         timestamp: Date.now()
       });
-      socket.emit("STATUS_UPDATE", { status: "FUNDS_RELEASED", txHash: settleReceipt.txHash, amount: specialist.price, niche, modelId: specialist.id, taskId });
+      socket.emit("STATUS_UPDATE", { status: "FUNDS_RELEASED", txHash: settleReceipt.txHash, amount: ethers.formatUnits(specResponse.final_amount_base, 6), niche, modelId: specialist.id, taskId });
       previousOutput = specResponse.result;
-      chainResults.push({ niche, modelName: specialist.modelName, output: specResponse.result, price: specialist.price });
+      chainResults.push({ niche, modelName: specialist.modelName, output: specResponse.result, price: ethers.formatUnits(specResponse.final_amount_base, 6) });
     } else {
       socket.emit("STATUS_UPDATE", { status: "SETTLEMENT_TX_PENDING", niche });
       await blockchain.rejectTaskOnChain(taskId, specResponse.final_amount_base, specResponse.result_hash, specResponse.signature);
@@ -102,10 +103,13 @@ async function orchestrateChain(
   }
 
   // Build combined response text
-  const responseText = chainResults.map(r =>
-    `**${r.modelName} (${r.niche}):**\n\n\`\`\`${r.niche.toLowerCase()}\n${r.output}\n\`\`\``
-  ).join("\n\n---\n\n");
-  const totalCost = chainResults.reduce((sum, r) => sum + parseFloat(r.price), 0).toFixed(2);
+  const responseText = chainResults.map(r => {
+    if (r.output.includes('```')) {
+      return `**${r.modelName} (${r.niche}):**\n\n${r.output}`;
+    }
+    return `**${r.modelName} (${r.niche}):**\n\n\`\`\`${r.niche.toLowerCase()}\n${r.output}\n\`\`\``;
+  }).join("\n\n---\n\n");
+  const totalCost = chainResults.reduce((sum, r) => sum + parseFloat(r.price), 0).toFixed(4);
 
   return {
     delegate: true,
@@ -270,7 +274,7 @@ export async function orchestrate(
 
   socket.emit("STATUS_UPDATE", { status: "EVALUATING_RESULT" });
 
-  const evaluation = await llm.evaluateResult(niche, specResponse.result);
+  const evaluation = await llm.evaluateResult(intent.sub_prompt, niche, specResponse.result);
 
   if (evaluation === "YES") {
     socket.emit("STATUS_UPDATE", { status: "SETTLEMENT_TX_PENDING" });
@@ -289,17 +293,28 @@ export async function orchestrate(
     socket.emit("STATUS_UPDATE", {
       status: "FUNDS_RELEASED",
       txHash: settleReceipt.txHash,
-      amount: specialist.price,
+      amount: ethers.formatUnits(specResponse.final_amount_base, 6),
       niche,
       modelId: specialist.id,
       taskId
     });
 
+    let resultText = specResponse.result;
+    const backtickCount = (resultText.match(/```/g) || []).length;
+    if (backtickCount % 2 !== 0) {
+      resultText += '\n```\n';
+    }
+
+    let finalText = `Here is the analysis from ${specialist.modelName}:\n\n\`\`\`${niche.toLowerCase()}\n${resultText}\n\`\`\`\n\nI verified the ${niche} syntax and approved the payment on-chain using the cryptographically verified receipt!`;
+    if (resultText.includes('```')) {
+      finalText = `Here is the analysis from ${specialist.modelName}:\n\n${resultText}\n\nI verified the ${niche} syntax and approved the payment on-chain using the cryptographically verified receipt!`;
+    }
+
     return {
       delegate: true,
       niche,
       result: specResponse.result,
-      text: `Here is the analysis from ${specialist.modelName}:\n\n\`\`\`${niche.toLowerCase()}\n${specResponse.result}\n\`\`\`\n\nI verified the ${niche} syntax and approved the payment on-chain using the cryptographically verified receipt!`,
+      text: finalText,
     };
   } else {
     socket.emit("STATUS_UPDATE", { status: "SETTLEMENT_TX_PENDING" });

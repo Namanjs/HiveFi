@@ -29,11 +29,18 @@ export async function detectIntent(prompt: string): Promise<IntentResult> {
     {
       role: "system",
       content:
-        `You are the HiveFi Orchestrator. You are a highly capable general-purpose AI. If the user's request explicitly matches one of the specialized niches currently available on the network, you MUST delegate using the delegate_to_specialist tool. For complex tasks requiring multiple available specializations, call the tool MULTIPLE times in the correct execution order. 
+        `You are the HiveFi Orchestrator. You are a highly capable general-purpose AI router. Your PRIMARY goal is to delegate tasks to specialized agents whenever possible. 
 
 Currently Available Network Niches: ${nicheString}.
 
-IMPORTANT: If the user asks for something (like Python, SQL, React, etc.) but that niche is NOT listed in the Available Network Niches above, DO NOT DELEGATE. You must answer the user's request directly yourself.`,
+If the user's request falls under the domain of ANY of these active niches, you MUST delegate using the delegate_to_specialist tool. 
+For example: 
+- HTML, CSS, UI, animations, or web components -> FRONTEND
+- Database queries, schemas, data extraction -> SQL
+- Scripts, data analysis, backend logic -> PYTHON
+- Logos, layouts, color palettes -> DESIGN
+
+Do NOT try to solve domain-specific tasks natively. Only answer directly if the request is a simple greeting, general conversation, or explicitly falls completely outside the available niches.`,
     },
     { role: "user", content: prompt },
   ];
@@ -73,7 +80,17 @@ IMPORTANT: If the user asks for something (like Python, SQL, React, etc.) but th
     callOptions.tool_choice = "auto";
   }
 
-  const response = await groq.chat.completions.create(callOptions);
+  let response;
+  try {
+    response = await groq.chat.completions.create(callOptions);
+  } catch (error: any) {
+    console.error("Groq Intent Detection Error:", error.message || error);
+    // Fallback if the model hallucinates a non-existent tool (common Groq 400 error)
+    return {
+      delegate: false,
+      text: "I encountered an internal routing error (hallucinated tool call). Please try rephrasing your request."
+    };
+  }
 
   const responseMessage = response.choices[0].message;
 
@@ -95,6 +112,14 @@ IMPORTANT: If the user asks for something (like Python, SQL, React, etc.) but th
         }
         return { niche: "", sub_prompt: "" };
       });
+      
+    if (chain.length === 0) {
+      return {
+        delegate: false,
+        text: "I encountered an internal routing error (hallucinated tool call). Please try rephrasing your request to target a specific specialist."
+      };
+    }
+    
     return { delegate: true, chain };
   }
 
@@ -193,35 +218,22 @@ export async function callSpecialistEndpoint(endpoint: string, prompt: string, n
   }
 }
 
-/**
- * Pass 3: Evaluation
- * Uses a strict system prompt to evaluate code validity.
- */
-export async function evaluateResult(niche: string, result: string): Promise<string> {
-  let systemContent = "You are an evaluator.";
-  if (niche.toUpperCase() === "SQL") {
-    systemContent =
-      "You are a database and code evaluator. Analyze the following text. " +
-      "Does it contain valid SQL syntax (even if mock schema)? Reply strictly with 'YES' or 'NO'. " +
-      "Do not output anything else. No explanations, no markdown formatting.";
-  } else if (niche.toUpperCase() === "PYTHON") {
-    systemContent =
-      "You are a code evaluator. Analyze the following text. " +
-      "Does it contain valid Python syntax? Reply strictly with 'YES' or 'NO'. " +
-      "Do not output anything else. No explanations, no markdown formatting.";
-  } else if (niche.toUpperCase() === "DESIGN") {
-    systemContent =
-      "Does this text contain a structured UI/UX specification with layout and design details? Reply YES or NO only.";
-  } else if (niche.toUpperCase() === "FRONTEND") {
-    systemContent =
-      "Does this text contain valid React JSX or TSX code? Reply YES or NO only.";
-  } else {
-    systemContent =
-      `You are an expert evaluator for the domain/niche: ${niche.toUpperCase()}. Analyze the following text and determine if it represents a valid and reasonable attempt at solving a task in this niche. Reply strictly with 'YES' or 'NO'. Do not output anything else. No explanations, no markdown formatting.`;
-  }
+export async function evaluateResult(originalPrompt: string, niche: string, result: string): Promise<string> {
+  const systemContent = `You are an expert AI evaluator for the HiveFi decentralized AI network.
+Your job is to evaluate if a specialist AI node has successfully completed the assigned task.
+
+Task Niche: ${niche.toUpperCase()}
+Original User Prompt/Task: "${originalPrompt}"
+
+You must analyze the specialist's output and determine if it represents a valid, reasonable, and safe attempt at solving the Original User Prompt.
+- For code (SQL, Python, Frontend), verify that the syntax is generally correct and matches the request.
+- For text/design, verify that the response directly addresses the prompt.
+- Reject (NO) if the output is completely irrelevant, hallucinates, or seems like an attempt to game the system (e.g., just printing 'hello world' for a complex task).
+
+Reply STRICTLY with 'YES' if it passes, or 'NO' if it fails. Do not output any other text or explanations.`;
 
   const response = await groq.chat.completions.create({
-    model: "llama-3.1-8b-instant",
+    model: "llama-3.3-70b-versatile",
     messages: [
       { role: "system", content: systemContent },
       { role: "user", content: result },
