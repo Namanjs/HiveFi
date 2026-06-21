@@ -84,14 +84,21 @@ export async function initializeBlockchain(): Promise<void> {
   logger.info("Blockchain service successfully initialized.");
 }
 
-async function sendTxWithMutex(txFn: () => Promise<ethers.ContractTransactionResponse>): Promise<ethers.ContractTransactionReceipt> {
+async function sendTxWithMutexAsync(txFn: () => Promise<ethers.ContractTransactionResponse>): Promise<{ hash: string }> {
   return await txMutex.runExclusive(async () => {
     const tx = await txFn();
     logger.info(`Transaction submitted: ${tx.hash}`);
-    const receipt = await tx.wait();
-    if (!receipt) throw new Error("Transaction failed or was dropped");
-    logger.info(`Transaction confirmed in block ${receipt.blockNumber}`);
-    return receipt;
+    
+    // Async wait for confirmation without blocking the return
+    tx.wait().then((receipt: ethers.ContractTransactionReceipt | null) => {
+      if (receipt) {
+        logger.info(`Transaction confirmed in block ${receipt.blockNumber}`);
+      }
+    }).catch((err: any) => {
+      logger.error(`Transaction ${tx.hash} failed to confirm:`, err);
+    });
+    
+    return { hash: tx.hash };
   });
 }
 
@@ -110,7 +117,7 @@ export async function requestTaskOnChain(
   logger.info(`Locking ${amountInUSDC} USDC in escrow from ${clientWallet} for Provider ID ${providerId}...`);
 
   let taskId: bigint = 0n;
-  const receipt = await txMutex.runExclusive(async () => {
+  const { hash } = await txMutex.runExclusive(async () => {
     taskId = await registryContract!.nextTaskId();
     
     try {
@@ -135,15 +142,20 @@ export async function requestTaskOnChain(
       { gasLimit: 300000n }
     );
     logger.info(`Transaction submitted: ${tx.hash}`);
-    const r = await tx.wait();
-    if (!r) throw new Error("Transaction failed or was dropped");
-    logger.info(`Transaction confirmed in block ${r.blockNumber}`);
-    return r;
+    
+    // Async wait
+    tx.wait().then((r: ethers.ContractTransactionReceipt | null) => {
+      if (r) logger.info(`Transaction confirmed in block ${r.blockNumber}`);
+    }).catch((e: any) => {
+      logger.error(`Transaction ${tx.hash} failed:`, e);
+    });
+
+    return { hash: tx.hash };
   });
 
   return {
     taskId: taskId.toString(),
-    txHash: receipt.hash,
+    txHash: hash,
   };
 }
 
@@ -157,7 +169,7 @@ export async function settleTaskOnChain(
 
   logger.info(`Settling task ${taskId} with signature...`);
 
-  const receipt = await sendTxWithMutex(() =>
+  const receipt = await sendTxWithMutexAsync(() =>
     registryContract!.settleTask(taskId, finalAmountBase, resultHash, signature, {
       gasLimit: 400000n,
     })
@@ -178,7 +190,7 @@ export async function rejectTaskOnChain(
 
   logger.info(`Rejecting task ${taskId} (initiating three-way split)...`);
 
-  const receipt = await sendTxWithMutex(() =>
+  const receipt = await sendTxWithMutexAsync(() =>
     registryContract!.rejectTask(taskId, finalAmountBase, resultHash, signature, {
       gasLimit: 400000n,
     })

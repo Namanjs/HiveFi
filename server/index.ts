@@ -9,6 +9,7 @@ import * as dotenv from "dotenv";
 
 dotenv.config();
 
+import { ethers } from "ethers";
 import * as blockchain from "./services/blockchain";
 import { orchestrate, analyzeIntent } from "./services/orchestrator";
 import * as registry from "./services/registry";
@@ -16,6 +17,7 @@ import * as ratings from "./services/ratings";
 import * as llm from "./services/llm";
 import * as taskHistory from "./services/taskHistory";
 import { requireApiKey } from "./services/auth";
+import { parseHiveFiError } from "./services/errorParser";
 
 // Health Status state
 let healthStatus: Record<string, boolean> = {};
@@ -143,7 +145,7 @@ app.post("/api/orchestrate", orchestrateLimiter, requireApiKey, async (req: Requ
     return res.json({ success: true, ...result });
   } catch (error: any) {
     logger.error("Orchestration error:", error);
-    return res.status(500).json({ success: false, error: error.message });
+    return res.status(500).json({ success: false, error: parseHiveFiError(error) });
   }
 });
 
@@ -163,7 +165,7 @@ app.post("/api/analyze-intent", orchestrateLimiter, requireApiKey, async (req: R
     return res.json({ success: true, intent });
   } catch (error: any) {
     logger.error("Analyze intent error:", error);
-    return res.status(500).json({ success: false, error: error.message });
+    return res.status(500).json({ success: false, error: parseHiveFiError(error) });
   }
 });
 
@@ -174,7 +176,7 @@ app.get("/api/registry", async (_req: Request, res: Response): Promise<any> => {
     return res.json({ success: true, specialists });
   } catch (error: any) {
     logger.error("Error fetching registry:", error);
-    return res.status(500).json({ success: false, error: error.message });
+    return res.status(500).json({ success: false, error: parseHiveFiError(error) });
   }
 });
 
@@ -198,7 +200,7 @@ app.post("/api/registry/register-endpoint", async (req: Request, res: Response):
     return res.json({ success: true });
   } catch (error: any) {
     logger.error("Error storing endpoint:", error);
-    return res.status(500).json({ success: false, error: error.message });
+    return res.status(500).json({ success: false, error: parseHiveFiError(error) });
   }
 });
 
@@ -215,7 +217,7 @@ app.post("/api/ratings", async (req: Request, res: Response): Promise<any> => {
     await ratings.submitRating(modelId, taskId, score, niche);
     return res.json({ success: true });
   } catch (error: any) {
-    return res.status(500).json({ success: false, error: error.message });
+    return res.status(500).json({ success: false, error: parseHiveFiError(error) });
   }
 });
 
@@ -225,7 +227,7 @@ app.get("/api/ratings/:modelId", async (req: Request, res: Response): Promise<an
     const summary = await ratings.getRating(req.params.modelId as string);
     return res.json({ success: true, summary });
   } catch (error: any) {
-    return res.status(500).json({ success: false, error: error.message });
+    return res.status(500).json({ success: false, error: parseHiveFiError(error) });
   }
 });
 
@@ -258,12 +260,29 @@ app.get("/api/dashboard/:walletAddress", async (req: Request, res: Response): Pr
     const allSpecialists = await registry.getAllSpecialists(getHealthStatus());
     const userModels = allSpecialists.filter(s => s.wallet.toLowerCase() === walletAddress);
     
-    const tasks = await taskHistory.getTasksByWallet(walletAddress);
+    const rawTasks = await taskHistory.getTasksByWallet(walletAddress);
     
-    const totalEarned = tasks
-      .filter(t => t.status === 'approved')
-      .reduce((sum, t) => sum + parseFloat(t.amount), 0);
+    // Calculate total earned only on tasks performed as a specialist node (converted to USDC)
+    const totalEarned = rawTasks
+      .filter(t => t.status === 'approved' && t.specialistWallet?.toLowerCase() === walletAddress)
+      .reduce((sum, t) => sum + parseFloat(ethers.formatUnits(t.amount, 6)), 0);
       
+    // Format tasks to match what the client (Transactions page) expects
+    const formattedTasks = rawTasks.map(t => {
+      const specialist = allSpecialists.find(s => s.wallet.toLowerCase() === t.specialistWallet?.toLowerCase());
+      return {
+        id: t.taskId,
+        niche: t.niche,
+        modelName: specialist ? specialist.name : t.niche,
+        modelAddress: t.specialistWallet,
+        prompt: t.prompt || "Swarm execution job",
+        amount: ethers.formatUnits(t.amount, 6),
+        status: t.status,
+        createdAt: t.timestamp,
+        txHash: t.txHash || ""
+      };
+    });
+
     const ratingsData = await ratings.getRatingsData();
 
     const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
@@ -292,7 +311,7 @@ app.get("/api/dashboard/:walletAddress", async (req: Request, res: Response): Pr
       success: true,
       models: userModels,
       totalEarned: totalEarned.toFixed(2),
-      tasks,
+      tasks: formattedTasks,
       ratings: {
         averageScore,
         totalRatings,
@@ -302,7 +321,7 @@ app.get("/api/dashboard/:walletAddress", async (req: Request, res: Response): Pr
     });
   } catch (error: any) {
     logger.error("Error fetching dashboard data:", error);
-    return res.status(500).json({ success: false, error: error.message });
+    return res.status(500).json({ success: false, error: parseHiveFiError(error) });
   }
 });
 
