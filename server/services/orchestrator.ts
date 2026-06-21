@@ -64,7 +64,7 @@ async function orchestrateChain(
 
     // Execute
     socket.emit("STATUS_UPDATE", { status: "EXECUTING_SPECIALIST", niche });
-    const specResponse = await llm.callSpecialistEndpoint(specialist.endpoint, step.sub_prompt, niche, previousOutput || undefined, taskId.toString(), specialist.id);
+    const specResponse = await llm.callSpecialistEndpoint(specialist.endpoint, step.sub_prompt, niche, previousOutput || undefined, taskId.toString(), specialist.id, maxFee);
 
     // Evaluate
     socket.emit("STATUS_UPDATE", { status: "EVALUATING_RESULT", niche });
@@ -77,25 +77,31 @@ async function orchestrateChain(
         taskId,
         modelId: specialist.id,
         specialistWallet: specialist.wallet,
+        clientWallet,
         niche,
-        amount: specResponse.final_amount_base, // Could be formatted, but keep as is for history
+        amount: specResponse.final_amount_base,
         status: 'approved',
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        prompt: step.sub_prompt,
+        txHash: settleReceipt.txHash,
       });
       socket.emit("STATUS_UPDATE", { status: "FUNDS_RELEASED", txHash: settleReceipt.txHash, amount: ethers.formatUnits(specResponse.final_amount_base, 6), niche, modelId: specialist.id, taskId });
       previousOutput = specResponse.result;
       chainResults.push({ niche, modelName: specialist.modelName, output: specResponse.result, price: ethers.formatUnits(specResponse.final_amount_base, 6) });
     } else {
       socket.emit("STATUS_UPDATE", { status: "SETTLEMENT_TX_PENDING", niche });
-      await blockchain.rejectTaskOnChain(taskId, specResponse.final_amount_base, specResponse.result_hash, specResponse.signature);
+      const rejectReceipt = await blockchain.rejectTaskOnChain(taskId, specResponse.final_amount_base, specResponse.result_hash, specResponse.signature);
       await taskHistory.appendTask({
         taskId,
         modelId: specialist.id,
         specialistWallet: specialist.wallet,
+        clientWallet,
         niche,
         amount: specResponse.final_amount_base,
         status: 'rejected',
-        timestamp: Date.now()
+        timestamp: Date.now(),
+        prompt: step.sub_prompt,
+        txHash: rejectReceipt.txHash,
       });
       socket.emit("STATUS_UPDATE", { status: "TASK_REJECTED", niche });
       throw new Error(`Chain failed at step ${i + 1}/${chain.length} (${niche}). Specialist output rejected.`);
@@ -148,7 +154,7 @@ export async function analyzeIntent(
     const escrowReceipt = await blockchain.requestTaskOnChain(clientWallet, orchestratorModel.id, escrowAmount, prompt, 0);
     const taskId = escrowReceipt.taskId;
     
-    const specResponse = await llm.callSpecialistEndpoint(orchestratorModel.endpoint, prompt, "ORCHESTRATOR", undefined, taskId, orchestratorModel.id);
+    const specResponse = await llm.callSpecialistEndpoint(orchestratorModel.endpoint, prompt, "ORCHESTRATOR", undefined, taskId, orchestratorModel.id, maxFee);
     
     try {
       intent = JSON.parse(specResponse.result);
@@ -270,7 +276,7 @@ export async function orchestrate(
 
   socket.emit("STATUS_UPDATE", { status: "EXECUTING_SPECIALIST", niche });
 
-  const specResponse = await llm.callSpecialistEndpoint(specialist.endpoint, intent.sub_prompt, niche, undefined, taskId.toString(), specialist.id);
+  const specResponse = await llm.callSpecialistEndpoint(specialist.endpoint, intent.sub_prompt, niche, undefined, taskId.toString(), specialist.id, maxFee);
 
   socket.emit("STATUS_UPDATE", { status: "EVALUATING_RESULT" });
 
@@ -284,10 +290,13 @@ export async function orchestrate(
       taskId,
       modelId: specialist.id,
       specialistWallet: specialist.wallet,
+      clientWallet,
       niche,
       amount: specResponse.final_amount_base,
       status: 'approved',
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      prompt: intent.sub_prompt,
+      txHash: settleReceipt.txHash,
     });
 
     socket.emit("STATUS_UPDATE", {
@@ -324,10 +333,13 @@ export async function orchestrate(
       taskId,
       modelId: specialist.id,
       specialistWallet: specialist.wallet,
+      clientWallet,
       niche,
       amount: specResponse.final_amount_base,
       status: 'rejected',
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      prompt: intent.sub_prompt,
+      txHash: refundReceipt.txHash,
     });
 
     socket.emit("STATUS_UPDATE", {

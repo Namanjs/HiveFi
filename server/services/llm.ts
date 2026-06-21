@@ -167,7 +167,7 @@ export interface SpecialistResponse {
  * Call Specialist Endpoint
  * Makes a real HTTP POST to the external specialist node for execution.
  */
-export async function callSpecialistEndpoint(endpoint: string, prompt: string, niche: string, context?: string, taskId?: string, providerId?: string): Promise<SpecialistResponse> {
+export async function callSpecialistEndpoint(endpoint: string, prompt: string, niche: string, context?: string, taskId?: string, providerId?: string, maxBudget?: number): Promise<SpecialistResponse> {
   const url = `${endpoint.replace(/\/$/, '')}/execute`;
   const timeoutMs = 90000; // 90 seconds timeout
 
@@ -181,7 +181,7 @@ export async function callSpecialistEndpoint(endpoint: string, prompt: string, n
         'Content-Type': 'application/json',
         'x-auth-secret': process.env.AUTH_SECRET || ''
       },
-      body: JSON.stringify({ prompt, niche, context, taskId, providerId }),
+      body: JSON.stringify({ prompt, niche, context, taskId, providerId, maxBudget }),
       signal: controller.signal
     });
 

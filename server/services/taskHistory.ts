@@ -6,10 +6,13 @@ export interface TaskRecord {
   taskId: string;
   modelId: string;
   specialistWallet: string;
+  clientWallet?: string;
   niche: string;
   amount: string;
   status: 'approved' | 'rejected';
   timestamp: number;
+  prompt?: string;
+  txHash?: string;
 }
 
 const historyPath = path.join(__dirname, '../config/task-history.json');
@@ -35,7 +38,10 @@ export async function getTasksByWallet(wallet: string, limit: number = 20): Prom
     const history: TaskRecord[] = await readJSON<TaskRecord[]>(historyPath, []);
     
     const walletLower = wallet.toLowerCase();
-    const filtered = history.filter(t => t.specialistWallet.toLowerCase() === walletLower);
+    const filtered = history.filter(t => 
+      t.specialistWallet.toLowerCase() === walletLower ||
+      (t.clientWallet && t.clientWallet.toLowerCase() === walletLower)
+    );
     
     // Sort descending by timestamp
     filtered.sort((a, b) => b.timestamp - a.timestamp);
