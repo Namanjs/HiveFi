@@ -14,7 +14,7 @@ export async function generateHuggingface(prompt: string): Promise<string> {
     const response = await hf.chatCompletion({
       model: config.MODEL_ID,
       messages: [{ role: "user", content: finalPrompt }],
-      max_tokens: 1024,
+      max_tokens: 8192,
     });
 
     if (response.choices && response.choices.length > 0) {

@@ -11,6 +11,7 @@ export async function generateOllama(prompt: string): Promise<string> {
     model: config.MODEL_ID,
     prompt: prompt,
     stream: false,
+    options: { num_predict: 8192 },
   };
 
   if (config.SYSTEM_PROMPT) {

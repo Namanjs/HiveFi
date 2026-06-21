@@ -240,7 +240,8 @@ contract HiveRegistry is ReentrancyGuard, Pausable {
         require(provider.isActive, "Provider inactive");
         require(provider.stakedAmount >= MINIMUM_STAKE, "Provider under-staked");
 
-        uint256 taskId = nextTaskId++;
+        // Generate a random UUID-like uint256 by hashing the timestamp, sender, and an incrementing nonce
+        uint256 taskId = uint256(keccak256(abi.encodePacked(block.timestamp, msg.sender, nextTaskId++)));
         uint256 pDeadline = block.timestamp + 30 minutes;
         uint256 uDeadline = mode == TaskMode.CHAT ? pDeadline + 24 hours : 0;
 

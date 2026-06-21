@@ -27,7 +27,7 @@ router.get('/health', (req: Request, res: Response) => {
 
 router.post('/execute', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { prompt, niche, context, taskId, providerId } = req.body;
+    const { prompt, niche, context, taskId, providerId, maxBudget } = req.body;
 
     if (!prompt) {
       return res.status(400).json({ error: 'Missing required field: prompt', code: 'BAD_REQUEST' });
@@ -77,7 +77,13 @@ router.post('/execute', async (req: Request, res: Response, next: NextFunction) 
 
     // 2. Calculate final amount (in USDC decimals = 6)
     const pricePerTokenFloat = parseFloat(config.PRICE_PER_TOKEN);
-    const finalAmountFloat = tokens * pricePerTokenFloat;
+    let finalAmountFloat = tokens * pricePerTokenFloat;
+    
+    // Budget Capping
+    if (maxBudget !== undefined && finalAmountFloat > parseFloat(maxBudget)) {
+      finalAmountFloat = parseFloat(maxBudget);
+    }
+    
     const finalAmountBase = ethers.parseUnits(finalAmountFloat.toFixed(6), 6).toString();
 
     let signature = null;
