@@ -1,13 +1,110 @@
-import { useState, useEffect } from "react";
-import { Key, Server, ShieldCheck, Wallet, Loader2, Coins, AlertCircle } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
+import { Key, Server, ShieldCheck, Wallet, Loader2, Coins, AlertCircle, Info } from "lucide-react";
 import { useWallet } from "../hooks/useWallet";
 import { Contract, formatUnits, parseUnits } from "ethers";
 import MockUSDCABI from "../config/MockUSDC.json";
 import { DropdownMenu } from "../components/DropdownMenu";
-import { motion, Variants } from "framer-motion";
+import { motion, AnimatePresence, Variants } from "framer-motion";
 
 const MOCK_USDC_ADDRESS = import.meta.env.VITE_MOCK_USDC_ADDRESS;
 const HIVE_REGISTRY_ADDRESS = import.meta.env.VITE_HIVE_REGISTRY_ADDRESS;
+
+function AllowanceTooltip() {
+  const [isOpen, setIsOpen] = useState(false);
+  const [isClicked, setIsClicked] = useState(false);
+  const timeoutRef = useRef<any>(null);
+  const tooltipRef = useRef<HTMLDivElement>(null);
+
+  // Close when clicking outside if it was opened by click
+  useEffect(() => {
+    if (!isClicked) return;
+    const handleClickOutside = (event: MouseEvent) => {
+      if (tooltipRef.current && !tooltipRef.current.contains(event.target as Node)) {
+        setIsClicked(false);
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isClicked]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
+
+  const handleMouseEnter = () => {
+    if (isClicked) return;
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => {
+      setIsOpen(true);
+    }, 1000);
+  };
+
+  const handleMouseLeave = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    if (!isClicked) {
+      setIsOpen(false);
+    }
+  };
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    
+    if (isClicked) {
+      setIsClicked(false);
+      setIsOpen(false);
+    } else {
+      setIsClicked(true);
+      setIsOpen(true);
+    }
+  };
+
+  return (
+    <div 
+      ref={tooltipRef}
+      className="relative inline-block"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      <button
+        type="button"
+        onClick={handleClick}
+        className="text-[#a1a1aa] hover:text-white transition-colors focus:outline-none flex items-center justify-center p-0.5 rounded-full hover:bg-white/10"
+        aria-label="Allowance info"
+      >
+        <Info size={13} />
+      </button>
+
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: 4, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 4, scale: 0.95 }}
+            transition={{ duration: 0.15, ease: "easeOut" }}
+            className="absolute z-50 bottom-full right-0 mb-2 w-80 p-4 bg-[#09090b]/95 backdrop-blur-md border border-white/10 rounded-xl shadow-xl leading-relaxed text-xs text-[#a1a1aa] pointer-events-auto"
+          >
+            {/* Tooltip Arrow */}
+            <div className="absolute top-full right-3 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-[#09090b]/95" />
+            
+            <strong className="text-white block mb-1 font-medium flex items-center gap-1.5">
+              <ShieldCheck size={13} className="text-[#a1a1aa]" /> Allowance Mechanics
+            </strong>
+            <p>
+              The ERC-20 security standard prevents smart contracts from automatically increasing your allowance after refunding unspent fees. To avoid signing a new approval transaction for every Swarm operation, you can authorize an <strong className="text-white">Infinite</strong> allowance. The HiveRegistry strictly enforces cryptographic receipts, ensuring only the exact tokens consumed are deducted from your balance.
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
 export default function Settings() {
   const [openaiKey, setOpenaiKey] = useState("");
@@ -273,8 +370,8 @@ export default function Settings() {
           {/* RIGHT COLUMN */}
           <div className="flex flex-col gap-6">
             {/* Card 3: Spending & Allowances */}
-            <motion.div variants={cardVariants} className="bg-[#09090b] border border-white/10 rounded-xl overflow-hidden shadow-sm">
-              <div className="px-6 py-5 border-b border-white/5 bg-[#09090b]/50">
+            <motion.div variants={cardVariants} className="bg-[#09090b] border border-white/10 rounded-xl shadow-sm relative">
+              <div className="px-6 py-5 border-b border-white/5 bg-[#09090b]/50 rounded-t-xl">
                 <h3 className="text-sm font-semibold text-white flex items-center gap-2">
                   <Wallet size={15} className="text-[#a1a1aa]" /> 
                   Spending & Allowances
@@ -309,8 +406,11 @@ export default function Settings() {
                       <span className="text-xs font-medium text-[#a1a1aa]">Wallet Balance</span>
                       <span className="text-sm font-mono text-white">{balance !== null ? balance : "0.00"} USDC</span>
                     </div>
-                    <div className="bg-[#18181b] border border-white/5 rounded-lg p-4 flex flex-col gap-1">
-                      <span className="text-xs font-medium text-[#a1a1aa]">Current Allowance</span>
+                    <div className="bg-[#18181b] border border-white/5 rounded-lg p-4 flex flex-col gap-1 relative">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-medium text-[#a1a1aa]">Current Allowance</span>
+                        <AllowanceTooltip />
+                      </div>
                       <span className="text-sm font-mono text-white truncate" title={`${allowance} USDC`}>
                         {allowance && parseFloat(allowance) > 1e10 ? "Unlimited" : `${allowance} USDC`}
                       </span>
@@ -343,12 +443,6 @@ export default function Settings() {
                     </button>
                   </div>
 
-                  <div className="bg-[#18181b]/50 border border-[#27272a]/50 rounded-lg p-4 text-xs text-[#a1a1aa] leading-relaxed">
-                    <strong className="text-white block mb-1 font-medium">Allowance Mechanics</strong>
-                    <p>
-                      The ERC-20 security standard prevents smart contracts from automatically increasing your allowance after refunding unspent fees. To avoid signing a new approval transaction for every Swarm operation, you can authorize an <strong>Infinite</strong> allowance. The HiveRegistry strictly enforces cryptographic receipts, ensuring only the exact tokens consumed are deducted from your balance.
-                    </p>
-                  </div>
                 </div>
               )}
             </motion.div>

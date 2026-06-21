@@ -17,7 +17,7 @@ export interface WalletState {
 }
 
 export interface WalletContextType extends WalletState {
-  connectWallet: () => Promise<void>;
+  connectWallet: (isAutoConnect?: boolean) => Promise<void>;
   disconnectWallet: () => void;
 }
 
@@ -33,9 +33,45 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     error: null,
   });
 
-  const connectWallet = useCallback(async () => {
+  const connectWallet = useCallback(async (isAutoConnect: boolean = false) => {
     if (!window.ethereum) {
-      setWallet((prev) => ({ ...prev, error: "Please install MetaMask or another Web3 wallet." }));
+      if (!isAutoConnect) {
+        setWallet((prev) => ({ ...prev, error: "Please install MetaMask or another Web3 wallet." }));
+      }
+      return;
+    }
+
+    if (isAutoConnect) {
+      try {
+        const provider = new BrowserProvider(window.ethereum);
+        const accounts = await provider.send("eth_accounts", []);
+        if (accounts.length === 0) {
+          return; // Exit silently if no accounts are authorized
+        }
+
+        const network = await provider.getNetwork();
+        if (network.chainId !== 11155111n) {
+          try {
+            await provider.send("wallet_switchEthereumChain", [{ chainId: "0xaa36a7" }]);
+          } catch (e) {
+            return; // Exit silently on switch error during silent check
+          }
+        }
+
+        const signer = await provider.getSigner();
+        const address = await signer.getAddress();
+
+        setWallet({
+          address,
+          isConnected: true,
+          isConnecting: false,
+          provider,
+          signer,
+          error: null,
+        });
+      } catch (err) {
+        console.error("Auto-connect check failed:", err);
+      }
       return;
     }
 
@@ -54,11 +90,10 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      // Check if already authorized
-      const accounts = await provider.send("eth_accounts", []);
+      // Prompt user to connect accounts
+      const accounts = await provider.send("eth_requestAccounts", []);
       if (accounts.length === 0) {
-        await provider.send("wallet_requestPermissions", [{ eth_accounts: {} }]);
-        await provider.send("eth_requestAccounts", []);
+        throw new Error("No accounts found. Please authorize your wallet.");
       }
       
       const signer = await provider.getSigner();
@@ -98,7 +133,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
   // Check for existing connection on mount
   useEffect(() => {
     if (localStorage.getItem("walletConnected") === "true") {
-      connectWallet();
+      connectWallet(true);
     }
   }, [connectWallet]);
 
@@ -109,12 +144,20 @@ export function WalletProvider({ children }: { children: ReactNode }) {
         if (accounts.length === 0) {
           disconnectWallet();
         } else if (wallet.address !== accounts[0] && localStorage.getItem("walletConnected") === "true") {
-          connectWallet();
+          connectWallet(true);
         }
       };
 
-      const handleChainChanged = () => {
-        window.location.reload();
+      const handleChainChanged = (chainId: string | number) => {
+        const hexChainId = typeof chainId === "number" ? "0x" + chainId.toString(16) : chainId;
+        const prevChainId = sessionStorage.getItem("currentChainId");
+        
+        if (prevChainId && prevChainId.toLowerCase() !== hexChainId.toLowerCase()) {
+          sessionStorage.setItem("currentChainId", hexChainId);
+          window.location.reload();
+        } else {
+          sessionStorage.setItem("currentChainId", hexChainId);
+        }
       };
 
       window.ethereum.on("accountsChanged", handleAccountsChanged);

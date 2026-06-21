@@ -4,6 +4,9 @@ import { IntentAnalysisMessage } from "./IntentAnalysisMessage";
 import { useChat } from "../contexts/ChatContext";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
+import "katex/dist/katex.min.css";
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
@@ -85,8 +88,8 @@ const MarkdownComponents = {
   h1: ({ children }: any) => <h1 className="text-2xl font-bold mt-8 mb-4 text-white tracking-tight font-sans">{children}</h1>,
   h2: ({ children }: any) => <h2 className="text-xl font-semibold mt-8 mb-4 text-white tracking-tight font-sans">{children}</h2>,
   h3: ({ children }: any) => <h3 className="text-lg font-semibold mt-6 mb-3 text-white tracking-tight font-sans">{children}</h3>,
-  ul: ({ children }: any) => <ul className="list-disc pl-5 mb-4 space-y-2 text-white/90 marker:text-(--color-accent)">{children}</ul>,
-  ol: ({ children }: any) => <ol className="list-decimal pl-5 mb-4 space-y-2 text-white/90 marker:text-(--color-accent)">{children}</ol>,
+  ul: ({ children }: any) => <ul className="list-disc list-inside mb-4 space-y-2 text-white/90 marker:text-[var(--color-accent)]">{children}</ul>,
+  ol: ({ children }: any) => <ol className="list-decimal list-inside mb-4 space-y-2 text-white/90 marker:text-[var(--color-accent)]">{children}</ol>,
   li: ({ children }: any) => <li className="leading-[1.75] pl-1">{children}</li>,
   blockquote: ({ children }: any) => <blockquote className="border-l-4 border-(--color-accent) pl-4 py-1 my-5 bg-linear-to-r from-(--color-accent)/10 to-transparent rounded-r-lg italic text-white/80">{children}</blockquote>,
   a: ({ href, children }: any) => <a href={href} target="_blank" rel="noopener noreferrer" className="text-(--color-accent) hover:underline underline-offset-4 decoration-white/30 hover:decoration-(--color-accent) transition-all font-medium">{children}</a>,
@@ -102,38 +105,7 @@ const MarkdownComponents = {
   pre: ({ children }: any) => <>{children}</>
 };
 
-function StreamingMessage({ content, isTyping, onComplete }: { content: string, isTyping?: boolean, onComplete?: () => void }) {
-  const [displayed, setDisplayed] = useState("");
-
-  useEffect(() => {
-    if (isTyping === false) {
-      setDisplayed(content);
-      return;
-    }
-    const interval = setInterval(() => {
-      setDisplayed((prev) => {
-        if (prev.length < content.length) {
-          return content.slice(0, prev.length + 1);
-        }
-        clearInterval(interval);
-        if (onComplete) onComplete();
-        return prev;
-      });
-    }, 15);
-    return () => clearInterval(interval);
-  }, [content, isTyping, onComplete]);
-
-  return (
-    <div className="w-full min-w-0 max-w-full text-[15px]">
-      <ReactMarkdown 
-        remarkPlugins={[remarkGfm]}
-        components={MarkdownComponents as any}
-      >
-        {displayed}
-      </ReactMarkdown>
-    </div>
-  );
-}
+// Removed StreamingMessage function to make responses instant
 
 interface Message {
   sender: "user" | "assistant";
@@ -228,7 +200,7 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, ratingPr
     container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
   }, [messages, isLoading, activeStreamIndex]);
 
-  const isExecutionActive = isLoading || activeStreamIndex !== null;
+  const isExecutionActive = isLoading;
 
   const handleSubmit = (e?: FormEvent) => {
     if (e) e.preventDefault();
@@ -257,11 +229,11 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, ratingPr
         {messages.map((m, idx) => (
           <div key={idx} className={`flex w-full group/msg ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
             {m.sender === "user" ? (
-              <div className="max-w-[85%] bg-[#1e1e20] text-white border border-white/10 rounded-3xl rounded-br-sm px-5 py-3.5 text-[15px] leading-relaxed shadow-lg whitespace-pre-wrap">
+              <div className="max-w-[85%] md:max-w-2xl lg:max-w-3xl bg-[#1e1e20] text-white border border-white/10 rounded-3xl rounded-br-sm px-5 py-3.5 text-[15px] leading-relaxed shadow-lg whitespace-pre-wrap">
                 {m.text}
               </div>
             ) : (
-              <div className="max-w-full w-full flex gap-5">
+              <div className="max-w-full md:max-w-3xl lg:max-w-4xl w-full flex gap-5">
                 {/* Assistant Avatar */}
                 <div className="w-8 h-8 rounded-full bg-linear-to-br from-(--color-accent) to-(--color-secondary-accent) shrink-0 flex items-center justify-center shadow-lg border border-white/10 mt-0.5">
                    <span className="text-white font-bold text-sm tracking-tighter">H</span>
@@ -269,18 +241,18 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, ratingPr
                 {/* Assistant Content */}
                 <div className="flex-1 min-w-0 flex flex-col items-start max-w-[calc(100%-3rem)]">
                   <div className="font-semibold text-white mb-2 text-[15px]">HiveFi</div>
-                  <StreamingMessage 
-                    content={m.text} 
-                    isTyping={activeStreamIndex === idx}
-                    onComplete={() => {
-                      if (activeStreamIndex === idx) setActiveStreamIndex(null);
-                    }}
-                  />
-                  {activeStreamIndex !== idx && (
-                    <div className="opacity-0 group-hover/msg:opacity-100 transition-opacity">
-                      <MessageCopyButton text={m.text} />
-                    </div>
-                  )}
+                  <div className="w-full min-w-0 max-w-full text-[15px]">
+                    <ReactMarkdown 
+                      remarkPlugins={[remarkGfm, remarkMath]}
+                      rehypePlugins={[rehypeKatex]}
+                      components={MarkdownComponents as any}
+                    >
+                      {m.text}
+                    </ReactMarkdown>
+                  </div>
+                  <div className="opacity-0 group-hover/msg:opacity-100 transition-opacity">
+                    <MessageCopyButton text={m.text} />
+                  </div>
                 </div>
               </div>
             )}
@@ -303,7 +275,7 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, ratingPr
           </div>
         )}
 
-        {ratingPrompt && onRate && !isLoading && (
+        {ratingPrompt && onRate && !isExecutionActive && (
           <div className="flex flex-col items-center justify-center p-4 mt-4 border border-white/10 bg-white/5 rounded-xl">
             <span className="text-[10px] text-[#888] mb-3 uppercase tracking-wider font-semibold">
               Rate {ratingPrompt.niche} Specialist

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { ExternalLink, CheckCircle2, Clock, AlertCircle, Wallet } from "lucide-react";
+import { ExternalLink, CheckCircle2, Clock, AlertCircle, Wallet, RefreshCw } from "lucide-react";
 import { useWallet } from "../hooks/useWallet";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3001";
@@ -7,6 +7,8 @@ const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3001";
 interface Task {
   id: string;
   niche: string;
+  modelName?: string;
+  modelAddress?: string;
   prompt: string;
   amount: string;
   status: string;
@@ -20,30 +22,31 @@ export default function Transactions() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!address) {
-      setTransactions([]);
-      return;
-    }
-
-    async function fetchTransactions() {
-      setIsLoading(true);
-      setError(null);
-      try {
-        const res = await fetch(`${API_BASE}/api/dashboard/${address}`);
-        const data = await res.json();
-        if (data.success && data.tasks) {
-          setTransactions(data.tasks);
-        } else {
-          setError(data.error || "Failed to load transactions");
-        }
-      } catch (err: any) {
-        setError(err.message || "Failed to connect to backend");
-      } finally {
-        setIsLoading(false);
+  const fetchTransactions = async () => {
+    if (!address) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/dashboard/${address}`);
+      const data = await res.json();
+      if (data.success && data.tasks) {
+        setTransactions(data.tasks);
+      } else {
+        setError(data.error || "Failed to load transactions");
       }
+    } catch (err: any) {
+      setError(err.message || "Failed to connect to backend");
+    } finally {
+      setIsLoading(false);
     }
-    fetchTransactions();
+  };
+
+  useEffect(() => {
+    if (address) {
+      fetchTransactions();
+    } else {
+      setTransactions([]);
+    }
   }, [address]);
 
   const getStatusIcon = (status: string) => {
@@ -77,9 +80,19 @@ export default function Transactions() {
   return (
     <div className="w-full h-full p-4 md:p-8 overflow-y-auto custom-scrollbar">
       <div className="max-w-[1400px] mx-auto space-y-8 pb-12">
-        <div className="border-b border-white/10 pb-6">
-          <h1 className="text-2xl font-semibold tracking-tight text-white">Transactions</h1>
-          <p className="text-[#a1a1aa] mt-1.5 text-sm">Immutable history of Escrow deposits and Specialist payouts.</p>
+        <div className="flex items-end justify-between border-b border-white/10 pb-6">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight text-white">Transactions</h1>
+            <p className="text-[#a1a1aa] mt-1.5 text-sm">Immutable history of Escrow deposits and Specialist payouts.</p>
+          </div>
+          <button 
+            onClick={fetchTransactions}
+            disabled={isLoading || !isConnected}
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border border-white/10 bg-[#09090b] shadow-sm text-xs font-medium text-white transition-all ${(isLoading || !isConnected) ? 'opacity-70 cursor-not-allowed' : 'hover:bg-white/5 cursor-pointer'}`}
+          >
+            <RefreshCw size={14} className={`text-[var(--color-accent)] ${isLoading ? 'animate-spin' : ''}`} />
+            {isLoading ? "Syncing..." : "Sync Chain"}
+          </button>
         </div>
 
         <div className="bg-[#09090b] border border-white/10 rounded-xl overflow-hidden shadow-sm">
@@ -92,7 +105,7 @@ export default function Transactions() {
                   <th className="px-6 py-4 text-xs font-medium text-[#a1a1aa] uppercase tracking-wider">Task Description</th>
                   <th className="px-6 py-4 text-xs font-medium text-[#a1a1aa] uppercase tracking-wider">Amount</th>
                   <th className="px-6 py-4 text-xs font-medium text-[#a1a1aa] uppercase tracking-wider">Status</th>
-                  <th className="px-6 py-4 text-xs font-medium text-[#a1a1aa] uppercase tracking-wider text-right">TxHash</th>
+                  <th className="px-6 py-4 text-xs font-medium text-[#a1a1aa] uppercase tracking-wider text-left">TxHash</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
@@ -111,7 +124,7 @@ export default function Transactions() {
                       <td className="px-6 py-5"><div className="h-4 bg-[#18181b] rounded w-48"></div></td>
                       <td className="px-6 py-5"><div className="h-4 bg-[#18181b] rounded w-16"></div></td>
                       <td className="px-6 py-5"><div className="h-6 bg-[#18181b] rounded-md w-20"></div></td>
-                      <td className="px-6 py-5 text-right"><div className="h-4 bg-[#18181b] rounded w-20 ml-auto"></div></td>
+                      <td className="px-6 py-5 text-left"><div className="h-4 bg-[#18181b] rounded w-20"></div></td>
                     </tr>
                   ))
                 ) : error ? (
@@ -136,10 +149,21 @@ export default function Transactions() {
                         <div className="text-[11px] text-[#a1a1aa] mt-1">{formatDate(tx.createdAt)}</div>
                       </td>
                       <td className="px-6 py-4">
-                        <span className="text-sm text-white/90 font-medium">{tx.niche}</span>
+                        <div className="flex flex-col gap-0.5">
+                          <span className="text-sm text-white/90 font-medium uppercase tracking-wide">
+                            {tx.modelName || tx.niche}
+                          </span>
+                          {tx.modelAddress && (
+                            <span className="text-[10px] text-[#a1a1aa] font-mono" title={tx.modelAddress}>
+                              {tx.modelAddress.substring(0, 6)}...{tx.modelAddress.substring(tx.modelAddress.length - 4)}
+                            </span>
+                          )}
+                        </div>
                       </td>
                       <td className="px-6 py-4">
-                        <span className="text-sm text-[#a1a1aa] truncate max-w-[200px] block" title={tx.prompt}>{tx.prompt}</span>
+                        <p className="text-sm text-[#a1a1aa] break-words whitespace-normal max-w-sm line-clamp-2" title={tx.prompt}>
+                          {tx.prompt}
+                        </p>
                       </td>
                       <td className="px-6 py-4">
                         <span className="text-sm font-medium text-white/90 font-mono">{tx.amount} <span className="text-white/40 text-xs">USDC</span></span>
@@ -147,15 +171,17 @@ export default function Transactions() {
                       <td className="px-6 py-4">
                         <div className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded border text-[11px] font-medium tracking-wide ${getStatusColor(tx.status)}`}>
                           {getStatusIcon(tx.status)}
-                          {tx.status}
+                          {tx.status.charAt(0).toUpperCase() + tx.status.slice(1)}
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-right">
+                      <td className="px-6 py-4 text-left">
                         {tx.txHash ? (
-                          <a href={`https://sepolia.etherscan.io/tx/${tx.txHash}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm font-mono text-[#a1a1aa] hover:text-white transition-colors">
-                            {tx.txHash.substring(0, 6)}...{tx.txHash.substring(tx.txHash.length - 4)}
-                            <ExternalLink size={14} />
-                          </a>
+                          <div className="flex justify-start">
+                            <a href={`https://sepolia.etherscan.io/tx/${tx.txHash}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm font-mono text-[#a1a1aa] hover:text-white transition-colors">
+                              {tx.txHash.substring(0, 6)}...{tx.txHash.substring(tx.txHash.length - 4)}
+                              <ExternalLink size={14} />
+                            </a>
+                          </div>
                         ) : (
                           <span className="text-sm font-mono text-[#a1a1aa]/50">-</span>
                         )}

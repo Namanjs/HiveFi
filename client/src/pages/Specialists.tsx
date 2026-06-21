@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Database, Code2, PenTool, Layout, Activity, Shield, TrendingUp, AlertCircle, Wifi, WifiOff } from "lucide-react";
+import { Database, Code2, PenTool, Layout, Activity, Shield, TrendingUp, AlertCircle, Wifi, WifiOff, RefreshCw } from "lucide-react";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3001";
 
@@ -28,36 +28,39 @@ export default function Specialists() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function fetchSpecialists() {
-      try {
-        const res = await fetch(`${API_BASE}/api/registry`);
-        const data = await res.json();
-        if (data.success && data.specialists) {
-          const uniqueModels = new Map();
-          data.specialists.forEach((m: any) => {
-            if (!uniqueModels.has(m.name)) {
+  const fetchSpecialists = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/api/registry`);
+      const data = await res.json();
+      if (data.success && data.specialists) {
+        const uniqueModels = new Map();
+        data.specialists.forEach((m: any) => {
+          if (!uniqueModels.has(m.name)) {
+            uniqueModels.set(m.name, m);
+          } else {
+            const existing = uniqueModels.get(m.name);
+            // Smart deduplication: Prefer the node that actually has ratings, or is online
+            if (m.totalRatings > existing.totalRatings) {
               uniqueModels.set(m.name, m);
-            } else {
-              const existing = uniqueModels.get(m.name);
-              // Smart deduplication: Prefer the node that actually has ratings, or is online
-              if (m.totalRatings > existing.totalRatings) {
-                uniqueModels.set(m.name, m);
-              } else if (m.totalRatings === existing.totalRatings && m.isOnline && !existing.isOnline) {
-                uniqueModels.set(m.name, m);
-              }
+            } else if (m.totalRatings === existing.totalRatings && m.isOnline && !existing.isOnline) {
+              uniqueModels.set(m.name, m);
             }
-          });
-          setSpecialists(Array.from(uniqueModels.values()));
-        } else {
-          setError(data.error || "Failed to load specialists");
-        }
-      } catch (err: unknown) {
-        setError(err instanceof Error ? err.message : "Failed to connect to backend");
-      } finally {
-        setIsLoading(false);
+          }
+        });
+        setSpecialists(Array.from(uniqueModels.values()));
+      } else {
+        setError(data.error || "Failed to load specialists");
       }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Failed to connect to backend");
+    } finally {
+      setIsLoading(false);
     }
+  };
+
+  useEffect(() => {
     fetchSpecialists();
   }, []);
 
@@ -83,11 +86,21 @@ export default function Specialists() {
             <h1 className="text-2xl font-semibold tracking-tight text-white">Specialist Swarm</h1>
             <p className="text-[#a1a1aa] mt-1.5 text-sm">Browse and configure active AI agents on the HiveFi network.</p>
           </div>
-          <div className="flex items-center gap-2 bg-[#09090b] border border-white/10 px-3 py-1.5 rounded-lg shadow-sm">
-            <Activity size={14} className="text-[#a1a1aa]" />
-            <span className="text-xs font-medium text-white">
-              {onlineCount}/{specialists.length} Online
-            </span>
+          <div className="flex items-center gap-3">
+            <button 
+              onClick={fetchSpecialists}
+              disabled={isLoading}
+              className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border border-white/10 bg-[#09090b] shadow-sm text-xs font-medium text-white transition-all ${isLoading ? 'opacity-70 cursor-not-allowed' : 'hover:bg-white/5 cursor-pointer'}`}
+            >
+              <RefreshCw size={14} className={`text-[var(--color-accent)] ${isLoading ? 'animate-spin' : ''}`} />
+              {isLoading ? "Syncing..." : "Sync Chain"}
+            </button>
+            <div className="flex items-center gap-2 bg-[#09090b] border border-white/10 px-3 py-1.5 rounded-lg shadow-sm">
+              <Activity size={14} className="text-[#a1a1aa]" />
+              <span className="text-xs font-medium text-white">
+                {onlineCount}/{specialists.length} Online
+              </span>
+            </div>
           </div>
         </div>
 

@@ -116,13 +116,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     }
   }, [pendingIntent, availableModels]);
 
-  useEffect(() => {
-    if (messages.length > 0 && messages[messages.length - 1].sender === "assistant") {
-      setActiveStreamIndex(messages.length - 1);
-    } else {
-      setActiveStreamIndex(null);
-    }
-  }, [messages.length]);
+  // Removed activeStreamIndex useEffect as responses are now instant
 
   useEffect(() => {
     const socketInstance: Socket = io(API_BASE, {
@@ -297,7 +291,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     } catch (error: any) {
       if (error.name !== "AbortError") {
         console.error(error);
-        setMessages((prev) => [...prev, { sender: "assistant", text: `**Error:** ${error.message}` }]);
+        setMessages((prev) => [...prev, { sender: "assistant", text: `🚨 **Error:** ${error.message}` }]);
         setExecutionStep("ERROR");
       }
     } finally {
@@ -358,7 +352,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     } catch (error: any) {
       if (error.name !== "AbortError") {
         console.error(error);
-        setMessages((prev) => [...prev, { sender: "assistant", text: `**Error:** ${error.message}` }]);
+        setMessages((prev) => [...prev, { sender: "assistant", text: `🚨 **Error:** ${error.message}` }]);
         setIsLoading(false);
       }
     }

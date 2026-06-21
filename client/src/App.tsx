@@ -1,4 +1,3 @@
-import { useWallet } from "./hooks/useWallet";
 import { useChat } from "./contexts/ChatContext";
 import EarningsBar from "./components/EarningsBar";
 import ChatPanel from "./components/ChatPanel";
@@ -7,7 +6,6 @@ import LogFeed from "./components/LogFeed";
 import ErrorBoundary from "./components/ErrorBoundary";
 
 export default function App() {
-  const { isConnected } = useWallet();
   const {
     messages,
     events,
@@ -27,13 +25,14 @@ export default function App() {
     executePrompt,
     handleCancelRequest,
     handleRate,
-    availableModels
+    availableModels,
+    socketId
   } = useChat();
 
   return (
     <div className="flex flex-col h-full w-full text-white bg-transparent min-w-0">
       <EarningsBar
-        isConnected={isConnected}
+        isServerConnected={!!socketId}
         showAbstraction={showAbstraction}
         onToggleAbstraction={() => setShowAbstraction(!showAbstraction)}
       />

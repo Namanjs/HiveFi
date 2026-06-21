@@ -99,11 +99,27 @@ function FlowFitter({
     const container = containerRef.current;
     if (!container) return;
 
-    const observer = new ResizeObserver(() => {
-      if (debounceTimer.current) clearTimeout(debounceTimer.current);
-      debounceTimer.current = setTimeout(() => {
-        fitView({ padding: 0.1, minZoom: 0.5, maxZoom: 1, duration: 400 });
-      }, 50);
+    let lastHeight = 0;
+    let lastWidth = 0;
+
+    const observer = new ResizeObserver((entries) => {
+      if (!entries.length) return;
+      const { width, height } = entries[0].contentRect;
+      
+      // Only trigger fitView if dimensions actually changed (prevents infinite resize loops)
+      if (Math.abs(width - lastWidth) > 1 || Math.abs(height - lastHeight) > 1) {
+        lastWidth = width;
+        lastHeight = height;
+
+        window.requestAnimationFrame(() => {
+          fitView({ padding: 0.1, minZoom: 0.5, maxZoom: 1 });
+        });
+
+        if (debounceTimer.current) clearTimeout(debounceTimer.current);
+        debounceTimer.current = setTimeout(() => {
+          fitView({ padding: 0.1, minZoom: 0.5, maxZoom: 1, duration: 400 });
+        }, 150);
+      }
     });
 
     observer.observe(container);

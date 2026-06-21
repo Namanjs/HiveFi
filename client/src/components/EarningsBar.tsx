@@ -1,22 +1,19 @@
 import { Wallet, Activity, Palette, Unplug } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useWallet } from "../hooks/useWallet";
-import { useLocation } from "react-router-dom";
 
 interface EarningsBarProps {
-  isConnected: boolean;
+  isServerConnected: boolean;
   showAbstraction: boolean;
   onToggleAbstraction: () => void;
 }
 
 export default function EarningsBar({
-  isConnected,
+  isServerConnected,
   showAbstraction,
   onToggleAbstraction,
 }: EarningsBarProps) {
   const { address, isConnected: isWalletConnected, isConnecting, connectWallet, disconnectWallet } = useWallet();
-  const location = useLocation();
-  const isMainPage = location.pathname === "/";
 
   const [theme, setTheme] = useState<string>(localStorage.getItem("theme") || "purple");
   const [showThemes, setShowThemes] = useState(false);
@@ -42,9 +39,12 @@ export default function EarningsBar({
 
       {/* RIGHT: Controls */}
       <div className="flex flex-wrap items-center gap-2 md:gap-4">
+        {/* Server Connection Status */}
         <div className="flex items-center gap-2 bg-black/40 backdrop-blur-3xl px-3 py-1.5 rounded-full border border-white/10 shadow-[0_4px_20px_rgba(0,0,0,0.3)]">
-          <div className={`w-2 h-2 rounded-full ${isConnected ? "bg-[#10b981] shadow-[0_0_8px_#10b981]" : "bg-red-500 shadow-[0_0_8px_#ef4444]"}`} />
-          <span className="text-[10px] font-medium tracking-wide text-[var(--color-text-secondary)] uppercase">{isConnected ? "Connected" : "Offline"}</span>
+          <div className={`w-1.5 h-1.5 rounded-full ${isServerConnected ? "bg-[#10b981] shadow-[0_0_6px_#10b981]" : "bg-red-500 shadow-[0_0_6px_#ef4444]"}`} />
+          <span className="text-[10px] font-medium tracking-wide text-[var(--color-text-secondary)] uppercase">
+            {isServerConnected ? "Server Online" : "Server Offline"}
+          </span>
         </div>
 
         {/* Theme Selector */}
@@ -88,7 +88,7 @@ export default function EarningsBar({
           </div>
         ) : (
           <button
-            onClick={connectWallet}
+            onClick={() => connectWallet()}
             disabled={isConnecting}
             className="relative group flex items-center gap-2 px-5 py-2 bg-gradient-to-r from-[var(--color-accent)] to-[var(--color-secondary-accent)] rounded-xl font-bold text-sm text-black shadow-[0_0_20px_rgba(255,255,255,0.1)] hover:scale-105 transition-all smooth-spring overflow-hidden"
           >

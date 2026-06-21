@@ -466,7 +466,7 @@ export default function HowSwarmWorksModal({ open, onClose }: HowSwarmWorksModal
           </AnimatePresence>
         </div>
 
-        <div className="shrink-0 px-6 sm:px-10 py-6 sm:py-7 border-t border-white/8 bg-[#121214]/60">
+        <div className="shrink-0 border-t border-white/8 bg-[#121214]/60 px-6 sm:px-10 py-6 sm:py-7 flex flex-col gap-5">
           <AnimatePresence mode="wait">
             <motion.div
               key={page}
@@ -483,52 +483,52 @@ export default function HowSwarmWorksModal({ open, onClose }: HowSwarmWorksModal
               </p>
             </motion.div>
           </AnimatePresence>
-        </div>
 
-        <div className="shrink-0 px-6 sm:px-10 pb-6 sm:pb-8 flex items-center justify-between">
-          <div className="flex gap-2">
-            {CARDS.map((_, i) => (
-              <button
-                key={i}
-                type="button"
-                onClick={() => setPage(i)}
-                aria-label={`Go to step ${i + 1}`}
-                className={`h-1.5 rounded-full transition-all duration-300 ${
-                  i === page ? "w-8 bg-(--color-accent)" : "w-2 bg-white/20 hover:bg-white/40"
-                }`}
-              />
-            ))}
-          </div>
+          <div className="flex items-center justify-between pt-2">
+            <div className="flex gap-2">
+              {CARDS.map((_, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setPage(i)}
+                  aria-label={`Go to step ${i + 1}`}
+                  className={`h-1.5 rounded-full transition-all duration-300 ${
+                    i === page ? "w-8 bg-(--color-accent)" : "w-2 bg-white/20 hover:bg-white/40"
+                  }`}
+                />
+              ))}
+            </div>
 
-          <div className="flex items-center gap-3">
-            {page > 0 && (
-              <button
-                type="button"
-                onClick={() => setPage((p) => p - 1)}
-                className="flex items-center gap-1 px-4 py-2.5 text-sm text-white/50 hover:text-white transition-colors"
-              >
-                <ChevronLeft size={18} />
-                Back
-              </button>
-            )}
-            {isLast ? (
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-7 py-2.5 rounded-full text-sm font-semibold text-white bg-linear-to-r from-(--color-accent) to-(--color-secondary-accent) hover:opacity-90 transition-opacity shadow-[0_0_20px_color-mix(in_srgb,var(--color-accent)_35%,transparent)]"
-              >
-                Got it, let&apos;s go
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setPage((p) => p + 1)}
-                className="flex items-center gap-1 px-7 py-2.5 rounded-full text-sm font-semibold text-white bg-white/10 hover:bg-white/15 border border-white/12 transition-colors"
-              >
-                Next
-                <ChevronRight size={18} />
-              </button>
-            )}
+            <div className="flex items-center gap-3">
+              {page > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => p - 1)}
+                  className="flex items-center gap-1 px-4 py-2.5 text-sm text-white/50 hover:text-white transition-colors"
+                >
+                  <ChevronLeft size={18} />
+                  Back
+                </button>
+              )}
+              {isLast ? (
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-7 py-2.5 rounded-full text-sm font-semibold text-white bg-linear-to-r from-(--color-accent) to-(--color-secondary-accent) hover:opacity-90 transition-opacity shadow-[0_0_20px_color-mix(in_srgb,var(--color-accent)_35%,transparent)]"
+                >
+                  Got it, let&apos;s go
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setPage((p) => p + 1)}
+                  className="flex items-center gap-1 px-7 py-2.5 rounded-full text-sm font-semibold text-white bg-white/10 hover:bg-white/15 border border-white/12 transition-colors"
+                >
+                  Next
+                  <ChevronRight size={18} />
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </motion.div>
