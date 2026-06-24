@@ -1,5 +1,5 @@
 import { Wallet, Activity, Palette, Unplug } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useWallet } from "../hooks/useWallet";
 
 interface EarningsBarProps {
@@ -17,6 +17,17 @@ export default function EarningsBar({
 
   const [theme, setTheme] = useState<string>(localStorage.getItem("theme") || "purple");
   const [showThemes, setShowThemes] = useState(false);
+  const [showReconnecting, setShowReconnecting] = useState(false);
+  const wasConnectedRef = useRef(false);
+
+  useEffect(() => {
+    if (isServerConnected) {
+      wasConnectedRef.current = true;
+      setShowReconnecting(false);
+    } else if (wasConnectedRef.current) {
+      setShowReconnecting(true);
+    }
+  }, [isServerConnected]);
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
@@ -32,6 +43,11 @@ export default function EarningsBar({
   ];
   return (
     <header className="flex flex-wrap items-center justify-between gap-y-4 px-4 md:px-8 py-4 text-white w-full z-50">
+      {showReconnecting && (
+        <div className="w-full text-center py-2 bg-amber-500/15 border border-amber-500/30 rounded-lg text-[11px] font-medium text-amber-400 mb-2">
+          Server connection lost. Reconnecting...
+        </div>
+      )}
 
       {/* LEFT: Placeholder to push right items if needed, or empty */}
       <div className="flex items-center gap-2 md:gap-4">
