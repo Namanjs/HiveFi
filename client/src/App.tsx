@@ -1,3 +1,4 @@
+import { useWallet } from "./hooks/useWallet";
 import { useChat } from "./contexts/ChatContext";
 import EarningsBar from "./components/EarningsBar";
 import ChatPanel from "./components/ChatPanel";
@@ -6,6 +7,7 @@ import LogFeed from "./components/LogFeed";
 import ErrorBoundary from "./components/ErrorBoundary";
 
 export default function App() {
+  const { isConnected } = useWallet();
   const {
     messages,
     events,
@@ -25,24 +27,23 @@ export default function App() {
     executePrompt,
     handleCancelRequest,
     handleRate,
-    availableModels,
-    socketId
+    availableModels
   } = useChat();
 
   return (
     <div className="flex flex-col h-full w-full text-white bg-transparent min-w-0">
       <EarningsBar
-        isServerConnected={!!socketId}
+        isConnected={isConnected}
         showAbstraction={showAbstraction}
         onToggleAbstraction={() => setShowAbstraction(!showAbstraction)}
       />
 
       <main
         className={`flex-1 min-h-0 min-w-0 grid grid-cols-1 p-4 md:p-6 overflow-hidden transition-all duration-500 smooth-spring ${showAbstraction
-            ? isFullScreen
-              ? "lg:grid-cols-[0px_1fr] gap-0"
-              : "lg:grid-cols-[1fr_450px] gap-6"
-            : "lg:grid-cols-[1fr_0px] gap-0"
+          ? isFullScreen
+            ? "lg:grid-cols-[0px_1fr] gap-0"
+            : "lg:grid-cols-[1fr_450px] gap-6"
+          : "lg:grid-cols-[1fr_0px] gap-0"
           }`}
       >
         <div className={`transition-all duration-500 smooth-spring flex flex-col h-full min-h-0 w-full overflow-hidden min-w-0 ${isFullScreen && showAbstraction ? "hidden lg:flex lg:w-0 lg:opacity-0" : "opacity-100"

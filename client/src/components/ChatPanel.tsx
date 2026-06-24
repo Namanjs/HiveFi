@@ -132,6 +132,7 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, ratingPr
     activeStreamIndex,
     setActiveStreamIndex,
     availableModels,
+    registryLoaded,
     selectedModels,
     setSelectedModels
   } = useChat();
@@ -183,7 +184,7 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, ratingPr
 
   const welcomeMessage = useMemo(() => {
     const messages = [
-      "Welcome, Amigo 👋",
+      "Welcome, Amigo",
       "Ready to build, Commander?",
       "Swarm online. Awaiting orders.",
       "Hello there, Architect.",
@@ -345,7 +346,7 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, ratingPr
                 }}
                 className="bg-[#18181b] border border-white/10 rounded-lg pl-4 pr-10 py-2.5 text-sm text-white focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/30 appearance-none cursor-pointer transition-all hover:border-white/30"
               >
-                <option value="" disabled className="bg-[#121214]">Select a model...</option>
+                <option value="" disabled className="bg-[#121214]">{registryLoaded ? "Select a model..." : "Loading models..."}</option>
                 {availableModels.map(m => (
                   <option key={m.id} value={m.id} className="bg-[#121214]">{m.name} ({m.niche}) - {m.pricePerQuery} USDC</option>
                 ))}

@@ -35,6 +35,7 @@ interface ChatContextType {
   activeStreamIndex: number | null;
   setActiveStreamIndex: React.Dispatch<React.SetStateAction<number | null>>;
   availableModels: any[];
+  registryLoaded: boolean;
   setAvailableModels: React.Dispatch<React.SetStateAction<any[]>>;
   selectedModels: Record<string, string>;
   setSelectedModels: React.Dispatch<React.SetStateAction<Record<string, string>>>;
@@ -81,6 +82,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [input, setInput] = useState<string>("");
   const [activeStreamIndex, setActiveStreamIndex] = useState<number | null>(null);
   const [availableModels, setAvailableModels] = useState<any[]>([]);
+  const [registryLoaded, setRegistryLoaded] = useState(false);
   const [selectedModels, setSelectedModels] = useState<Record<string, string>>({});
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -95,6 +97,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
             uniqueModels.set(m.name, m);
           });
           setAvailableModels(Array.from(uniqueModels.values()));
+          setRegistryLoaded(true);
         }
       })
       .catch(console.error);
@@ -251,7 +254,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const executePrompt = async (nicheModels: Record<string, string>, maxFee?: number, intentOverride?: any, promptOverride?: string) => {
     setIsLoading(true);
     setPendingIntent(null);
-    
+
     abortControllerRef.current = new AbortController();
 
     try {
@@ -263,14 +266,14 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       const response = await fetch(`${API_BASE}/api/orchestrate`, {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "x-api-key": "hivefi-dev-key-local"
         },
-        body: JSON.stringify({ 
-          prompt: currentPrompt, 
-          socketId, 
-          maxFee: finalMaxFee, 
+        body: JSON.stringify({
+          prompt: currentPrompt,
+          socketId,
+          maxFee: finalMaxFee,
           clientWallet: address,
           delegationMode,
           customEndpoint,
@@ -291,7 +294,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     } catch (error: any) {
       if (error.name !== "AbortError") {
         console.error(error);
-        setMessages((prev) => [...prev, { sender: "assistant", text: `🚨 **Error:** ${error.message}` }]);
+        setMessages((prev) => [...prev, { sender: "assistant", text: `**Error:** ${error.message}` }]);
         setExecutionStep("ERROR");
       }
     } finally {
@@ -307,7 +310,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setCurrentExecutingNiche(null);
     setPendingIntent(null);
     setPendingPrompt(promptText);
-    
+
     abortControllerRef.current = new AbortController();
 
     try {
@@ -318,13 +321,13 @@ export function ChatProvider({ children }: { children: ReactNode }) {
 
       const response = await fetch(`${API_BASE}/api/analyze-intent`, {
         method: "POST",
-        headers: { 
+        headers: {
           "Content-Type": "application/json",
           "x-api-key": "hivefi-dev-key-local"
         },
-        body: JSON.stringify({ 
-          prompt: promptText, 
-          maxFee, 
+        body: JSON.stringify({
+          prompt: promptText,
+          maxFee,
           clientWallet: address,
           delegationMode,
           customEndpoint
@@ -338,7 +341,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         if (data.intent && data.intent.delegate !== false) {
           if (delegationMode === "manual") {
             setPendingIntent(data.intent);
-            setIsLoading(false); 
+            setIsLoading(false);
           } else {
             // Auto-execute for built-in, hired, personal
             await executePrompt({}, maxFee, data.intent, promptText);
@@ -352,7 +355,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     } catch (error: any) {
       if (error.name !== "AbortError") {
         console.error(error);
-        setMessages((prev) => [...prev, { sender: "assistant", text: `🚨 **Error:** ${error.message}` }]);
+        setMessages((prev) => [...prev, { sender: "assistant", text: `**Error:** ${error.message}` }]);
         setIsLoading(false);
       }
     }
@@ -379,6 +382,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     activeStreamIndex,
     setActiveStreamIndex,
     availableModels,
+    registryLoaded,
     setAvailableModels,
     selectedModels,
     setSelectedModels,
