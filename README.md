@@ -28,7 +28,7 @@ For **Agent builders and users**, HiveFi provides trust-minimized intelligence. 
 - `server/` — The Node/Express Orchestrator backend that manages prompt routing, evaluations, and blockchain interactions.
 - `client/` — The React/Vite frontend featuring the interactive Swarm Canvas, Marketplace, and Developer Dashboard.
 - `sdk/` — The `@hivefi/sdk` TypeScript package for external agents to easily consume the protocol.
-- `reference-specialist/` — A boilerplate Express server demonstrating how to connect a local AI model to the HiveFi network.
+- `specialist-node/` — A boilerplate Express server demonstrating how to connect a local AI model to the HiveFi network.
 
 ## Quick Start — For Users
 
@@ -67,7 +67,7 @@ Monetize your local models by plugging them into the HiveFi network.
 
 1. **Configure the Node:**
    ```bash
-   cd reference-specialist
+   cd specialist-node
    npm install
    cp .env.example .env
    ```
@@ -77,9 +77,9 @@ Monetize your local models by plugging them into the HiveFi network.
    npm run start
    ```
 4. **Register and Stake:**
-   - Go to `http://localhost:5173/register` in the frontend.
-   - Connect your MetaMask wallet (Base Sepolia network).
-   - Enter your node details (ensuring the endpoint URL matches where your `reference-specialist` is running, e.g., using ngrok).
+    - Go to `http://localhost:5173/deploy` in the frontend.
+    - Connect your MetaMask wallet (Base Sepolia network).
+    - Enter your node details (ensuring the endpoint URL matches where your `specialist-node` is running, e.g., using ngrok).
    - Sign the registration transaction and stake USDC to activate your node.
 
 ## Quick Start — For Agent Developers
@@ -107,23 +107,33 @@ Use the HiveFi SDK to give your agents access to decentralized specialists.
 
 ## Architecture
 
-```text
-+----------------+       +-------------------+       +-----------------------+
-|                |       |                   |       |                       |
-|  User / Agent  | ----> |  Orchestrator     | ----> |  Specialist Node      |
-|  (SDK/Client)  | <---- |  (Routing & Eval) | <---- |  (Ollama/HuggingFace) |
-|                |       |                   |       |                       |
-+----------------+       +---------+---------+       +-----------------------+
-                                   |
-                             USDC  |  Approve/Reject
-                                   v
-                         +-------------------+
-                         |                   |
-                         |   HiveRegistry    |
-                         | (Smart Contract)  |
-                         |                   |
-                         +-------------------+
+```mermaid
+flowchart LR
+    User["User / Agent<br/>(SDK/Client)"]
+    Orch["Orchestrator<br/>(Routing & Eval)"]
+    Spec["Specialist Node<br/>(Ollama/HuggingFace)"]
+    Contract["HiveRegistry<br/>(Smart Contract)"]
+
+    User -->|"Submit prompt"| Orch
+    Orch -->|"Route to specialist"| Spec
+    Spec -->|"Return result"| Orch
+    Orch -->|"USDC Approve/Reject"| Contract
 ```
+
+## Demo Walkthrough
+
+Run through a complete HiveFi workflow in under 60 seconds:
+
+1. **Start the stack** — Follow the Quick Start above to launch the server and client
+2. **Open the app** — Navigate to `http://localhost:5173`
+3. **View the network** — Click **"View Network"** in the top bar to expand the Swarm Canvas panel
+4. **Send a prompt** — Type *"Write a SQL query to find inactive users, then build a React component to display them"* and press Enter
+5. **Watch the swarm** — The canvas shows each step in real-time:
+   - Orchestrator node glows → **ANALYZING INTENT**
+   - Blockchain node glows → **ESCROW LOCKED** (USDC secured)
+   - Specialist nodes light up sequentially → **EXECUTING** (SQL → Frontend)
+   - Green glow on completion → **FUNDS RELEASED**
+6. **See the result** — The specialist's response appears in the chat panel with the model name
 
 ## Smart Contract
 
