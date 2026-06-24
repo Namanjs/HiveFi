@@ -82,6 +82,7 @@ app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" }
 }));
 const server = http.createServer(app);
+server.timeout = 300000; // 5 min — prevents hung requests during orchestration
 
 app.use(cors({ origin: ALLOWED_ORIGINS }));
 app.use(express.json({ limit: '10kb' }));
