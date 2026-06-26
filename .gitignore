@@ -23,6 +23,12 @@ contracts/typechain-types/
 .DS_Store
 Thumbs.db
 
+# Runtime config (mutated on every test/run — not tracked in git)
+server/config/api-keys.json
+server/config/endpoints.json
+server/config/ratings.json
+server/config/task-history.json
+
 # Logs
 *.log
 npm-debug.log*

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, FormEvent, useMemo } from "react";
-import { Send, Square, ArrowDown, Copy, Check } from "lucide-react";
+import { Send, Square, ArrowDown, Copy, Check, ChevronDown, ChevronRight, FileCode2 } from "lucide-react";
 import { IntentAnalysisMessage } from "./IntentAnalysisMessage";
 import { useChat } from "../contexts/ChatContext";
 import ReactMarkdown from "react-markdown";
@@ -13,11 +13,36 @@ import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism';
 const CodeBlockRenderer = ({ node, className, children, ...props }: any) => {
   const match = /language-(\w+)/.exec(className || '');
   const [copied, setCopied] = useState(false);
-  
+  const [collapsed, setCollapsed] = useState(false);
+  const { setWorkspaceFiles, setActiveFilePath, setActiveTab } = useChat();
+
+  const code = String(children).replace(/\n$/, '');
+
   const handleCopy = () => {
-    navigator.clipboard.writeText(String(children).replace(/\n$/, ''));
+    navigator.clipboard.writeText(code);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleOpenInWorkspace = () => {
+    let lang = match ? match[1].toLowerCase() : '';
+    if (lang === 'frontend') lang = 'tsx';
+    else if (lang === 'design') lang = 'css';
+
+    const extMap: Record<string, string> = {
+      tsx: 'tsx', typescript: 'ts', javascript: 'js', jsx: 'jsx',
+      python: 'py', sql: 'sql', css: 'css', html: 'html',
+      json: 'json', bash: 'sh', shell: 'sh', yaml: 'yml',
+    };
+    const ext = extMap[lang] || 'ts';
+    const filename = `src/code-snippet.${ext}`;
+
+    setWorkspaceFiles(prev => {
+      if (prev[filename]) return { ...prev, [`${filename.replace(/\.\w+$/, '')}-${Date.now()}.${ext}`]: code };
+      return { ...prev, [filename]: code };
+    });
+    setActiveFilePath(filename);
+    setActiveTab("workspace");
   };
 
   let lang = match ? match[1].toLowerCase() : '';
@@ -29,36 +54,49 @@ const CodeBlockRenderer = ({ node, className, children, ...props }: any) => {
   return match ? (
     <div className="rounded-xl overflow-hidden bg-[#0d0d0f] border border-white/5 shadow-xl max-w-full my-5 group/code">
       <div className="bg-white/2 px-4 py-2 text-xs text-white/40 border-b border-white/5 font-mono uppercase tracking-wider flex items-center justify-between">
-        <span>{match[1]}</span>
-        <button onClick={handleCopy} className="text-white/40 hover:text-white transition-colors flex items-center gap-1.5 cursor-pointer">
-          {copied ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
-          <span>{copied ? "Copied" : "Copy code"}</span>
-        </button>
+        <div className="flex items-center gap-3">
+          <button onClick={() => setCollapsed(!collapsed)} className="text-white/40 hover:text-white transition-colors cursor-pointer">
+            {collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+          </button>
+          <span>{match[1]}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button onClick={handleOpenInWorkspace} className="text-white/40 hover:text-(--color-accent) transition-colors flex items-center gap-1 cursor-pointer" title="Open in Workspace">
+            <FileCode2 size={14} />
+            <span className="hidden sm:inline">Workspace</span>
+          </button>
+          <button onClick={handleCopy} className="text-white/40 hover:text-white transition-colors flex items-center gap-1.5 cursor-pointer">
+            {copied ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
+            <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
+          </button>
+        </div>
       </div>
-      <div className="w-full">
-        <SyntaxHighlighter
-          {...props}
-          style={vscDarkPlus}
-          language={lang}
-          PreTag="div"
-          wrapLines={true}
-          wrapLongLines={true}
-          lineProps={{ style: { whiteSpace: 'pre-wrap', wordBreak: 'break-all' } }}
-          customStyle={{ 
-            margin: 0, 
-            padding: '16px', 
-            fontSize: '13px', 
-            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace', 
-            background: 'transparent', 
-            width: '100%', 
-            lineHeight: '1.5',
-            whiteSpace: 'pre-wrap',
-            wordBreak: 'break-all'
-          }}
-        >
-          {String(children).replace(/\n$/, '')}
-        </SyntaxHighlighter>
-      </div>
+      {!collapsed && (
+        <div className="w-full">
+          <SyntaxHighlighter
+            {...props}
+            style={vscDarkPlus}
+            language={lang}
+            PreTag="div"
+            wrapLines={true}
+            wrapLongLines={true}
+            lineProps={{ style: { whiteSpace: 'pre-wrap', wordBreak: 'break-all' } }}
+            customStyle={{ 
+              margin: 0, 
+              padding: '16px', 
+              fontSize: '13px', 
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace', 
+              background: 'transparent', 
+              width: '100%', 
+              lineHeight: '1.5',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-all'
+            }}
+          >
+            {code}
+          </SyntaxHighlighter>
+        </div>
+      )}
     </div>
   ) : (
     <code className="bg-(--color-accent)/15 text-(--color-accent) px-1.5 py-0.5 rounded-md font-mono text-[13px] border border-(--color-accent)/20 wrap-break-word" {...props}>
@@ -66,6 +104,8 @@ const CodeBlockRenderer = ({ node, className, children, ...props }: any) => {
     </code>
   );
 };
+
+
 
 const MessageCopyButton = ({ text }: { text: string }) => {
   const [copied, setCopied] = useState(false);

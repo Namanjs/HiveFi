@@ -25,20 +25,21 @@ export async function getSpecialistByNiche(niche: string, maxFee?: number): Prom
 
   let availableProviders = [];
 
-  const nextModelId = await contract.nextModelId();
-  for (let m = 0; m < Number(nextModelId); m++) {
-    const model = await contract.models(m);
+  const modelCount = await contract.modelIds.length;
+  for (let i = 0; i < Number(modelCount); i++) {
+    const modelId = await contract.modelIds(i);
+    const model = await contract.models(modelId);
     if (!model.isActive || model.niche.toUpperCase() !== niche.toUpperCase()) continue;
 
-    const providers = await contract.getActiveProviders(m);
+    const providers = await contract.getActiveProviders(modelId);
     
     for (const provider of providers) {
       const idStr = provider.id.toString();
-      const priceNum = parseFloat(ethers.formatUnits(provider.pricePerToken, 6)); // Assuming pricePerToken maps to maxBudget here
+      const priceNum = parseFloat(ethers.formatUnits(provider.pricePerToken, 6));
       
       if (endpoints[idStr]) {
         if (maxFee !== undefined && priceNum > maxFee) {
-          continue; // Skip if price exceeds maxFee
+          continue;
         }
         availableProviders.push({ model, provider, priceNum });
       }
@@ -123,12 +124,13 @@ export async function getAllSpecialists(healthStatus?: Record<string, boolean>):
   const allSpecialists = [];
   const endpoints = await readJSON<any>(endpointsPath, {});
 
-  const nextModelId = await contract.nextModelId();
-  for (let m = 0; m < Number(nextModelId); m++) {
-    const model = await contract.models(m);
+  const modelCount = await contract.modelIds.length;
+  for (let i = 0; i < Number(modelCount); i++) {
+    const modelId = await contract.modelIds(i);
+    const model = await contract.models(modelId);
     if (!model.isActive) continue;
 
-    const providers = await contract.getActiveProviders(m);
+    const providers = await contract.getActiveProviders(modelId);
     for (const provider of providers) {
       const idStr = provider.id.toString();
       const hasEndpoint = !!endpoints[idStr];

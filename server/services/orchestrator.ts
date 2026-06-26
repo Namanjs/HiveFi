@@ -5,6 +5,8 @@ import * as registry from "./registry";
 import type { SpecialistInfo } from "./registry";
 import * as taskHistory from "./taskHistory";
 import { ethers } from "ethers";
+import { detectCodeGenIntent, isCodeGenerationPrompt } from "./llm";
+import { orchestrateCodeGen } from "./codegenOrchestrator";
 
 export interface OrchestrationResult {
   delegate: boolean;
@@ -182,6 +184,14 @@ export async function orchestrate(
 ): Promise<OrchestrationResult> {
 
   socket.emit("STATUS_UPDATE", { status: "ANALYZING_INTENT" });
+
+  if (!preAnalyzedIntent && isCodeGenerationPrompt(prompt)) {
+    socket.emit("STATUS_UPDATE", { status: "ANALYZING_INTENT", message: "Detecting code generation requirements..." });
+    const codeGenPlan = await detectCodeGenIntent(prompt);
+    if (codeGenPlan) {
+      return await orchestrateCodeGen(codeGenPlan, socket, maxFee, clientWallet);
+    }
+  }
 
   let intent: any = preAnalyzedIntent;
 

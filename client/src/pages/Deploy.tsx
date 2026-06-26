@@ -183,14 +183,24 @@ export default function Deploy() {
       const maxPrice = parseUnits("1000", 6); // Max price allowed
       const stakeAmount = parseUnits("10", 6); // 10 USDC stake required
 
-      // 1. Get next model ID
-      setDeployStep("Reading blockchain state...");
-      const modelId = await registry.nextModelId();
-
-      // 2. Register Model
+      // 1. Register Model
       setDeployStep("Please confirm 'Register Model' transaction in your wallet...");
       const tx1 = await registry.registerModel(agentName, finalNiche, maxPrice);
-      await tx1.wait();
+      const receipt1 = await tx1.wait();
+
+      // Extract Model ID from event
+      let modelId: bigint;
+      for (const log of receipt1.logs) {
+        try {
+          const parsed = registry.interface.parseLog(log);
+          if (parsed && parsed.name === 'ModelRegistered') {
+            modelId = parsed.args[0];
+            break;
+          }
+        } catch (e) {
+          // ignore irrelevant logs
+        }
+      }
 
       // 3. Get Test USDC from Faucet
       setDeployStep("Please confirm 'Claim Test USDC' transaction in your wallet...");
@@ -202,13 +212,13 @@ export default function Deploy() {
         // We continue because they probably already have USDC from a previous attempt
       }
 
-      // 4. Approve USDC
+      // 3. Approve USDC
       setDeployStep("Please confirm 'Approve USDC' transaction in your wallet...");
       const tx3 = await usdc.approve(HIVE_REGISTRY_ADDRESS, stakeAmount);
       await tx3.wait();
 
-      // 5. Register Provider
-      setDeployStep(`Please confirm 'Register Provider' for Model ID ${modelId.toString()}...`);
+      // 4. Register Provider
+      setDeployStep(`Please confirm 'Register Provider' for Model ID ${modelId!.toString()}...`);
       const tx4 = await registry.registerProvider(modelId, endpointUrl, parsedFee, stakeAmount);
       const receipt = await tx4.wait();
 

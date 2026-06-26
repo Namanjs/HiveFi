@@ -45,7 +45,7 @@ describe('API Input Validation', () => {
         .post('/api/registry/register-endpoint')
         .send({ modelId: '1' });
       expect(res.status).toBe(400);
-      expect(res.body.error).toBe('Missing required fields');
+      expect(res.body.error).toBe('Missing required fields (providerId and endpointUrl)');
     });
   });
 

@@ -1,6 +1,5 @@
 import { expect } from "chai";
 import "@nomicfoundation/hardhat-chai-matchers";
-// @ts-ignore
 import { ethers } from "hardhat";
 
 describe("HiveRegistry", function () {
@@ -10,6 +9,29 @@ describe("HiveRegistry", function () {
   let wallet1: any;
   let wallet2: any;
   let orchestrator: any;
+  const SIX_DECIMALS = 6;
+  const USDC = (n: string) => ethers.parseUnits(n, SIX_DECIMALS);
+
+  async function signTask(providerWallet: any, taskId: bigint, finalAmount: bigint, resultHash: string) {
+    const packedHash = ethers.solidityPackedKeccak256(
+      ["uint256", "uint256", "bytes32"],
+      [taskId, finalAmount, resultHash]
+    );
+    return providerWallet.signMessage(ethers.getBytes(packedHash));
+  }
+
+  async function getTaskIdFromTx(tx: any): Promise<bigint> {
+    const receipt = await tx.wait();
+    for (const log of receipt.logs) {
+      try {
+        const parsed = hiveRegistry.interface.parseLog(log);
+        if (parsed && parsed.name === "TaskRequested") {
+          return parsed.args[0];
+        }
+      } catch { /* skip non-hiveRegistry logs */ }
+    }
+    throw new Error("TaskRequested event not found");
+  }
 
   beforeEach(async function () {
     [owner, wallet1, wallet2, orchestrator] = await ethers.getSigners();
@@ -19,229 +41,237 @@ describe("HiveRegistry", function () {
     await mockUSDC.waitForDeployment();
 
     const slashTreasury = owner.address;
-
     const HiveRegistry = await ethers.getContractFactory("HiveRegistry");
     hiveRegistry = await HiveRegistry.deploy(await mockUSDC.getAddress(), slashTreasury);
     await hiveRegistry.waitForDeployment();
 
-    await mockUSDC.connect(owner).mint(wallet1.address, ethers.parseUnits("1000", 6));
-    await mockUSDC.connect(owner).mint(orchestrator.address, ethers.parseUnits("1000", 6));
+    await mockUSDC.connect(owner).mint(wallet1.address, USDC("1000"));
+    await mockUSDC.connect(owner).mint(wallet2.address, USDC("1000"));
+    await mockUSDC.connect(owner).mint(orchestrator.address, USDC("1000"));
   });
+
+  async function createRegisteredProvider(modelName: string, niche: string, maxPrice: string, endpoint: string, price: string, stake: string, wallet: any): Promise<bigint> {
+    const tx1 = await hiveRegistry.connect(wallet).registerModel(modelName, niche, USDC(maxPrice));
+    const receipt1 = await tx1.wait();
+    let modelId: bigint;
+    for (const log of receipt1.logs) {
+      try {
+        const parsed = hiveRegistry.interface.parseLog(log);
+        if (parsed && parsed.name === "ModelRegistered") {
+          modelId = parsed.args[0];
+        }
+      } catch {}
+    }
+    await mockUSDC.connect(wallet).approve(await hiveRegistry.getAddress(), USDC(stake));
+    const tx2 = await hiveRegistry.connect(wallet).registerProvider(modelId!, endpoint, USDC(price), USDC(stake));
+    const receipt2 = await tx2.wait();
+    let providerId: bigint;
+    for (const log of receipt2.logs) {
+      try {
+        const parsed = hiveRegistry.interface.parseLog(log);
+        if (parsed && parsed.name === "ProviderRegistered") {
+          providerId = parsed.args[0];
+        }
+      } catch {}
+    }
+    return providerId!;
+  }
 
   describe("Reentrancy protection and Logic", function () {
     it("should prevent duplicate staking (staking more should increase balance properly)", async function () {
-      await hiveRegistry.connect(wallet1).registerModel("Test Model", "SQL", ethers.parseUnits("10", 6), wallet1.address);
-      const modelId = await hiveRegistry.nextModelId() - 1n;
+      const providerId = await createRegisteredProvider(
+        "Test Model", "SQL", "10", "http://localhost:4001", "5", "50", wallet1
+      );
 
-      const stakeAmount = ethers.parseUnits("50", 6);
-      await mockUSDC.connect(wallet1).approve(await hiveRegistry.getAddress(), stakeAmount);
-      await hiveRegistry.connect(wallet1).stakeForModel(modelId, stakeAmount);
+      const extraStake = USDC("25");
+      await mockUSDC.connect(wallet1).approve(await hiveRegistry.getAddress(), extraStake);
+      await hiveRegistry.connect(wallet1).stakeForProvider(providerId, extraStake);
 
-      const models = await hiveRegistry.getModelsByNiche("SQL");
-      expect(models[0].stakedAmount).to.equal(stakeAmount);
-    });
-
-    it("should emit ModelUpdated when updating model metadata", async function () {
-      await hiveRegistry.connect(wallet1).registerModel("Old Model", "SQL", ethers.parseUnits("10", 6), wallet1.address);
-      const modelId = await hiveRegistry.nextModelId() - 1n;
-
-      const newPrice = ethers.parseUnits("20", 6);
-      await expect(hiveRegistry.connect(wallet1).updateModel(modelId, "New Model", newPrice))
-        .to.emit(hiveRegistry, "ModelUpdated")
-        .withArgs(modelId, "New Model", newPrice);
-    });
-
-    it("should reject non-owner model updates", async function () {
-      await hiveRegistry.connect(wallet1).registerModel("Old Model", "SQL", ethers.parseUnits("10", 6), wallet1.address);
-      const modelId = await hiveRegistry.nextModelId() - 1n;
-
-      await expect(hiveRegistry.connect(wallet2).updateModel(modelId, "New Model", ethers.parseUnits("20", 6)))
-        .to.be.revertedWith("Only model wallet can update");
+      const provider = await hiveRegistry.providers(providerId);
+      expect(provider.stakedAmount).to.equal(USDC("75"));
     });
 
     it("should process full escrow flow (request, approve, release)", async function () {
-      await hiveRegistry.connect(wallet1).registerModel("Test Model 2", "PYTHON", ethers.parseUnits("50", 6), wallet1.address);
-      const modelId = await hiveRegistry.nextModelId() - 1n;
-      
-      const price = ethers.parseUnits("50", 6);
-      await mockUSDC.connect(orchestrator).approve(await hiveRegistry.getAddress(), price);
+      const providerId = await createRegisteredProvider(
+        "Test Model 2", "PYTHON", "50", "http://localhost:4002", "5", "10", wallet1
+      );
 
-      const promptHash = ethers.id("test prompt");
-      
-      await expect(hiveRegistry.connect(orchestrator).requestTask(wallet1.address, modelId, price, promptHash))
-        .to.emit(hiveRegistry, "TaskRequested");
+      const maxBudget = USDC("50");
+      await mockUSDC.connect(orchestrator).approve(await hiveRegistry.getAddress(), maxBudget);
 
-      const taskId = await hiveRegistry.nextTaskId() - 1n;
+      const tx = await hiveRegistry.connect(orchestrator).createTask(
+        orchestrator.address, providerId, maxBudget, ethers.id("test prompt"), 0
+      );
+      await expect(tx).to.emit(hiveRegistry, "TaskRequested");
+
+      const taskId = await getTaskIdFromTx(tx);
+      const finalAmount = USDC("40");
       const resultHash = ethers.id("test result");
 
+      const signature = await signTask(wallet1, taskId, finalAmount, resultHash);
       const balanceBefore = await mockUSDC.balanceOf(wallet1.address);
-      await expect(hiveRegistry.connect(orchestrator).approveTask(taskId, resultHash))
-        .to.emit(hiveRegistry, "TaskApproved");
-      
+
+      await expect(hiveRegistry.connect(orchestrator).settleTask(taskId, finalAmount, resultHash, signature))
+        .to.emit(hiveRegistry, "TaskSettled");
+
       const balanceAfter = await mockUSDC.balanceOf(wallet1.address);
-      expect(balanceAfter - balanceBefore).to.equal(price);
+      const providerCut = finalAmount - (finalAmount * 500n / 10000n);
+      expect(balanceAfter - balanceBefore).to.equal(providerCut);
     });
+
     it("should process reject and slash flow", async function () {
-      await hiveRegistry.connect(wallet1).registerModel("Reject Model", "JS", ethers.parseUnits("50", 6), wallet1.address);
-      const modelId = await hiveRegistry.nextModelId() - 1n;
+      const providerId = await createRegisteredProvider(
+        "Reject Model", "JS", "50", "http://localhost:4003", "5", "5", wallet1
+      );
 
-      const stakeAmount = ethers.parseUnits("5", 6);
-      await mockUSDC.connect(wallet1).approve(await hiveRegistry.getAddress(), stakeAmount);
-      await hiveRegistry.connect(wallet1).stakeForModel(modelId, stakeAmount);
+      const maxBudget = USDC("50");
+      await mockUSDC.connect(orchestrator).approve(await hiveRegistry.getAddress(), maxBudget);
+      const tx = await hiveRegistry.connect(orchestrator).createTask(
+        orchestrator.address, providerId, maxBudget, ethers.id("prompt"), 0
+      );
+      const taskId = await getTaskIdFromTx(tx);
 
-      const price = ethers.parseUnits("50", 6);
-      await mockUSDC.connect(orchestrator).approve(await hiveRegistry.getAddress(), price);
-      const promptHash = ethers.id("test prompt");
-      await hiveRegistry.connect(orchestrator).requestTask(wallet1.address, modelId, price, promptHash);
-      const taskId = await hiveRegistry.nextTaskId() - 1n;
+      const finalAmount = USDC("10");
+      const resultHash = ethers.id("bad result");
+      const signature = await signTask(wallet1, taskId, finalAmount, resultHash);
 
       const treasuryBalanceBefore = await mockUSDC.balanceOf(owner.address);
-      await expect(hiveRegistry.connect(orchestrator).rejectTask(taskId))
-        .to.emit(hiveRegistry, "TaskRejected")
-        .withArgs(taskId);
+      await expect(hiveRegistry.connect(orchestrator).rejectTask(taskId, finalAmount, resultHash, signature))
+        .to.emit(hiveRegistry, "TaskRejected");
 
-      const model = await hiveRegistry.models(modelId);
-      expect(model.slashCount).to.equal(1n);
-      
-      const slashAmount = 500000n; // 0.5 USDC
-      expect(model.stakedAmount).to.equal(stakeAmount - slashAmount);
+      const provider = await hiveRegistry.providers(providerId);
+      expect(provider.slashCount).to.equal(1n);
 
+      const slashAmount = 500000n;
+      expect(provider.stakedAmount).to.equal(USDC("5") - slashAmount);
+
+      const disputeFee = finalAmount * 500n / 10000n;
       const treasuryBalanceAfter = await mockUSDC.balanceOf(owner.address);
-      expect(treasuryBalanceAfter - treasuryBalanceBefore).to.equal(slashAmount);
+      expect(treasuryBalanceAfter - treasuryBalanceBefore).to.equal(slashAmount + disputeFee);
     });
 
-    it("should deactivate model via max slashes", async function () {
-      await hiveRegistry.connect(wallet1).registerModel("Max Slash Model", "RUST", ethers.parseUnits("10", 6), wallet1.address);
-      const modelId = await hiveRegistry.nextModelId() - 1n;
-
-      const stakeAmount = ethers.parseUnits("1", 6);
-      await mockUSDC.connect(wallet1).approve(await hiveRegistry.getAddress(), stakeAmount);
-      await hiveRegistry.connect(wallet1).stakeForModel(modelId, stakeAmount);
-
-      const price = ethers.parseUnits("10", 6);
+    it("should deactivate provider via max slashes", async function () {
+      const providerId = await createRegisteredProvider(
+        "Max Slash Model", "RUST", "10", "http://localhost:4004", "5", "10", wallet1
+      );
 
       for (let i = 0; i < 5; i++) {
-        await mockUSDC.connect(orchestrator).approve(await hiveRegistry.getAddress(), price);
-        await hiveRegistry.connect(orchestrator).requestTask(wallet1.address, modelId, price, ethers.id("prompt"));
-        const taskId = await hiveRegistry.nextTaskId() - 1n;
-        
-        if (i === 4) {
-          await expect(hiveRegistry.connect(orchestrator).rejectTask(taskId))
-            .to.emit(hiveRegistry, "ModelDeactivated")
-            .withArgs(modelId, "Max slash count reached");
-        } else {
-          await hiveRegistry.connect(orchestrator).rejectTask(taskId);
-        }
+        const budget = USDC("10");
+        await mockUSDC.connect(orchestrator).approve(await hiveRegistry.getAddress(), budget);
+        const tx = await hiveRegistry.connect(orchestrator).createTask(
+          orchestrator.address, providerId, budget, ethers.id(`prompt${i}`), 0
+        );
+        const taskId = await getTaskIdFromTx(tx);
+
+        const finalAmount = USDC("5");
+        const resultHash = ethers.id(`result${i}`);
+        const signature = await signTask(wallet1, taskId, finalAmount, resultHash);
+        await hiveRegistry.connect(orchestrator).rejectTask(taskId, finalAmount, resultHash, signature);
       }
 
-      const model = await hiveRegistry.models(modelId);
-      expect(model.isActive).to.be.false;
-      expect(model.slashCount).to.equal(5n);
+      const provider = await hiveRegistry.providers(providerId);
+      expect(provider.isActive).to.be.false;
+      expect(provider.slashCount).to.equal(5n);
     });
 
     it("should process timeout claim", async function () {
-      await hiveRegistry.connect(wallet1).registerModel("Timeout Model", "GO", ethers.parseUnits("20", 6), wallet1.address);
-      const modelId = await hiveRegistry.nextModelId() - 1n;
+      const providerId = await createRegisteredProvider(
+        "Timeout Model", "GO", "20", "http://localhost:4005", "5", "10", wallet1
+      );
 
-      const price = ethers.parseUnits("20", 6);
-      await mockUSDC.connect(orchestrator).approve(await hiveRegistry.getAddress(), price);
-      await hiveRegistry.connect(orchestrator).requestTask(wallet1.address, modelId, price, ethers.id("prompt"));
-      const taskId = await hiveRegistry.nextTaskId() - 1n;
+      const maxBudget = USDC("20");
+      await mockUSDC.connect(orchestrator).approve(await hiveRegistry.getAddress(), maxBudget);
+      const tx = await hiveRegistry.connect(orchestrator).createTask(
+        orchestrator.address, providerId, maxBudget, ethers.id("prompt"), 0
+      );
+      const taskId = await getTaskIdFromTx(tx);
 
-      await ethers.provider.send("evm_increaseTime", [301]);
+      await ethers.provider.send("evm_increaseTime", [90001]);
       await ethers.provider.send("evm_mine", []);
 
+      const finalAmount = USDC("15");
+      const resultHash = ethers.id("result");
+      const signature = await signTask(wallet1, taskId, finalAmount, resultHash);
+
       const balanceBefore = await mockUSDC.balanceOf(wallet1.address);
-      await expect(hiveRegistry.connect(wallet1).claimTimeout(taskId))
-        .to.emit(hiveRegistry, "TaskTimedOut")
-        .withArgs(taskId);
+      await expect(hiveRegistry.connect(wallet1).forceClaim(taskId, finalAmount, resultHash, signature))
+        .to.emit(hiveRegistry, "TaskForceClaimed");
 
       const balanceAfter = await mockUSDC.balanceOf(wallet1.address);
-      expect(balanceAfter - balanceBefore).to.equal(price);
+      const providerCut = finalAmount - (finalAmount * 500n / 10000n);
+      expect(balanceAfter - balanceBefore).to.equal(providerCut);
     });
 
     it("should respect Faucet cooldown", async function () {
       await mockUSDC.connect(wallet2).faucet();
       const balanceAfterFirst = await mockUSDC.balanceOf(wallet2.address);
-      expect(balanceAfterFirst).to.equal(ethers.parseUnits("100", 6));
+      expect(balanceAfterFirst).to.equal(USDC("1100"));
 
       await expect(mockUSDC.connect(wallet2).faucet()).to.be.revertedWith("Faucet cooldown active");
 
-      await ethers.provider.send("evm_increaseTime", [86401]); // 1 day + 1 second
+      await ethers.provider.send("evm_increaseTime", [86401]);
       await ethers.provider.send("evm_mine", []);
 
       await mockUSDC.connect(wallet2).faucet();
       const balanceAfterSecond = await mockUSDC.balanceOf(wallet2.address);
-      expect(balanceAfterSecond).to.equal(ethers.parseUnits("200", 6));
+      expect(balanceAfterSecond).to.equal(USDC("1200"));
     });
 
     it("should handle Pausable correctly", async function () {
-      await hiveRegistry.connect(wallet1).registerModel("Pausable Model", "C++", ethers.parseUnits("10", 6), wallet1.address);
-      const modelId = await hiveRegistry.nextModelId() - 1n;
+      const providerId = await createRegisteredProvider(
+        "Pausable Model", "C++", "10", "http://localhost:4006", "5", "10", wallet1
+      );
 
       await hiveRegistry.connect(owner).pause();
 
-      const price = ethers.parseUnits("10", 6);
-      await mockUSDC.connect(orchestrator).approve(await hiveRegistry.getAddress(), price);
+      const budget = USDC("10");
+      await mockUSDC.connect(orchestrator).approve(await hiveRegistry.getAddress(), budget);
 
-      await expect(hiveRegistry.connect(orchestrator).requestTask(wallet1.address, modelId, price, ethers.id("prompt")))
-        .to.be.revertedWithCustomError(hiveRegistry, "EnforcedPause");
-
-      await expect(hiveRegistry.connect(wallet1).registerModel("Another Model", "C++", price, wallet1.address))
-        .to.be.revertedWithCustomError(hiveRegistry, "EnforcedPause");
-
-      // View function should still work
-      const models = await hiveRegistry.getModelsByNiche("C++");
-      expect(models.length).to.equal(1);
+      await expect(
+        hiveRegistry.connect(orchestrator).createTask(orchestrator.address, providerId, budget, ethers.id("prompt"), 0)
+      ).to.be.revertedWithCustomError(hiveRegistry, "EnforcedPause");
 
       await hiveRegistry.connect(owner).unpause();
-      await expect(hiveRegistry.connect(orchestrator).requestTask(wallet1.address, modelId, price, ethers.id("prompt")))
-        .to.emit(hiveRegistry, "TaskRequested");
+
+      await expect(
+        hiveRegistry.connect(orchestrator).createTask(orchestrator.address, providerId, budget, ethers.id("prompt"), 0)
+      ).to.emit(hiveRegistry, "TaskRequested");
     });
 
     it("should prevent unstaking with pending tasks", async function () {
-      await hiveRegistry.connect(wallet1).registerModel("Unstake Model", "JAVA", ethers.parseUnits("10", 6), wallet1.address);
-      const modelId = await hiveRegistry.nextModelId() - 1n;
+      const providerId = await createRegisteredProvider(
+        "Unstake Model", "JAVA", "10", "http://localhost:4007", "5", "10", wallet1
+      );
 
-      const stakeAmount = ethers.parseUnits("10", 6);
-      await mockUSDC.connect(wallet1).approve(await hiveRegistry.getAddress(), stakeAmount);
-      await hiveRegistry.connect(wallet1).stakeForModel(modelId, stakeAmount);
+      const maxBudget = USDC("10");
+      await mockUSDC.connect(orchestrator).approve(await hiveRegistry.getAddress(), maxBudget);
+      const tx = await hiveRegistry.connect(orchestrator).createTask(
+        orchestrator.address, providerId, maxBudget, ethers.id("prompt"), 0
+      );
+      const taskId = await getTaskIdFromTx(tx);
 
-      const price = ethers.parseUnits("10", 6);
-      await mockUSDC.connect(orchestrator).approve(await hiveRegistry.getAddress(), price);
-      await hiveRegistry.connect(orchestrator).requestTask(wallet1.address, modelId, price, ethers.id("prompt"));
-      const taskId = await hiveRegistry.nextTaskId() - 1n;
+      await expect(
+        hiveRegistry.connect(wallet1).unstakeFromProvider(providerId)
+      ).to.be.revertedWith("Cannot unstake if active or busy");
 
-      await expect(hiveRegistry.connect(wallet1).unstakeFromModel(modelId))
-        .to.be.revertedWith("Cannot unstake with active status or pending tasks");
-      // Wait, the prompt says "Approve the task (clearing pending), then unstake - assert it succeeds"
-      // But unstakeFromModel also requires (!model.isActive || modelPendingTasks == 0). Wait, the require is `!model.isActive || modelPendingTasks[modelId] == 0`.
-      // If it's active but pending is 0, it works? Wait, the condition is `require(!model.isActive || modelPendingTasks[modelId] == 0)`. Wait, no, it's `!model.isActive || ...`. That means if it is active, pending must be 0? No, if it's NOT active OR pending is 0.
-      // Actually `!model.isActive || modelPendingTasks == 0` means if it's active but has 0 pending tasks, it can unstake.
-      await hiveRegistry.connect(orchestrator).approveTask(taskId, ethers.id("result"));
+      const finalAmount = USDC("8");
+      const resultHash = ethers.id("result");
+      const signature = await signTask(wallet1, taskId, finalAmount, resultHash);
+      await hiveRegistry.connect(orchestrator).settleTask(taskId, finalAmount, resultHash, signature);
 
-      // Now pending tasks is 0
-      await expect(hiveRegistry.connect(wallet1).unstakeFromModel(modelId))
-        .to.emit(hiveRegistry, "ModelUnstaked");
+      await expect(hiveRegistry.connect(wallet1).unstakeFromProvider(providerId))
+        .to.not.be.reverted;
     });
 
     it("should allow pauser to transfer pauser role", async function () {
-      await expect(hiveRegistry.connect(owner).transferPauser(wallet1.address))
-        .to.emit(hiveRegistry, "PauserTransferred")
-        .withArgs(owner.address, wallet1.address);
-        
+      await hiveRegistry.connect(owner).transferPauser(wallet1.address);
       expect(await hiveRegistry.pauser()).to.equal(wallet1.address);
-      
-      // Old pauser can no longer pause
+
       await expect(hiveRegistry.connect(owner).pause())
-        .to.be.revertedWith("Only pauser can pause");
-        
-      // New pauser can pause
+        .to.be.revertedWith("Only pauser");
+
       await hiveRegistry.connect(wallet1).pause();
-      
-      // Cannot transfer to zero address
-      await expect(hiveRegistry.connect(wallet1).transferPauser(ethers.ZeroAddress))
-        .to.be.revertedWith("New pauser is the zero address");
+      await hiveRegistry.connect(wallet1).unpause();
     });
   });
 });

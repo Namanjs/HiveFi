@@ -63,6 +63,7 @@ contract HiveRegistry is ReentrancyGuard, Pausable {
     // State Variables
     uint256 public nextModelId;
     mapping(uint256 => Model) public models;
+    uint256[] public modelIds;
 
     uint256 public nextProviderId;
     mapping(uint256 => Provider) public providers;
@@ -117,7 +118,7 @@ contract HiveRegistry is ReentrancyGuard, Pausable {
         string calldata niche,
         uint256 maxPricePerToken
     ) external returns (uint256) {
-        uint256 modelId = nextModelId++;
+        uint256 modelId = uint256(keccak256(abi.encodePacked(block.timestamp, msg.sender, name, niche, nextModelId++)));
         models[modelId] = Model({
             id: modelId,
             name: name,
@@ -125,6 +126,8 @@ contract HiveRegistry is ReentrancyGuard, Pausable {
             maxPricePerToken: maxPricePerToken,
             isActive: true
         });
+
+        modelIds.push(modelId);
 
         emit ModelRegistered(modelId, name);
         return modelId;
@@ -145,7 +148,7 @@ contract HiveRegistry is ReentrancyGuard, Pausable {
 
         require(usdcToken.transferFrom(msg.sender, address(this), initialStake), "USDC transfer failed");
 
-        uint256 providerId = nextProviderId++;
+        uint256 providerId = uint256(keccak256(abi.encodePacked(block.timestamp, msg.sender, modelId, endpoint, nextProviderId++)));
         providers[providerId] = Provider({
             id: providerId,
             modelId: modelId,

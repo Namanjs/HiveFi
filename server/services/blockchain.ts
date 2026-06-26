@@ -116,10 +116,7 @@ export async function requestTaskOnChain(
 
   logger.info(`Locking ${amountInUSDC} USDC in escrow from ${clientWallet} for Provider ID ${providerId}...`);
 
-  let taskId: bigint = 0n;
-  const { hash } = await txMutex.runExclusive(async () => {
-    taskId = await registryContract!.nextTaskId();
-    
+  return await txMutex.runExclusive(async () => {
     try {
       await registryContract!.createTask.staticCall(
         clientWallet, 
@@ -142,21 +139,31 @@ export async function requestTaskOnChain(
       { gasLimit: 300000n }
     );
     logger.info(`Transaction submitted: ${tx.hash}`);
-    
-    // Async wait
-    tx.wait().then((r: ethers.ContractTransactionReceipt | null) => {
-      if (r) logger.info(`Transaction confirmed in block ${r.blockNumber}`);
-    }).catch((e: any) => {
-      logger.error(`Transaction ${tx.hash} failed:`, e);
-    });
 
-    return { hash: tx.hash };
+    const receipt = await tx.wait();
+    if (receipt) {
+      logger.info(`Transaction confirmed in block ${receipt.blockNumber}`);
+
+      let taskId = "";
+      for (const log of receipt.logs) {
+        try {
+          const parsed = registryContract!.interface.parseLog(log);
+          if (parsed && parsed.name === "TaskRequested") {
+            taskId = parsed.args[0].toString();
+            break;
+          }
+        } catch {}
+      }
+
+      if (!taskId) {
+        throw new Error("TaskRequested event not found in createTask receipt");
+      }
+
+      return { taskId, txHash: tx.hash };
+    }
+
+    throw new Error("Transaction receipt not available");
   });
-
-  return {
-    taskId: taskId.toString(),
-    txHash: hash,
-  };
 }
 
 export async function settleTaskOnChain(

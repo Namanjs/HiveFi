@@ -1,17 +1,13 @@
-import { Wallet, Activity, Palette, Unplug } from "lucide-react";
+import { Wallet, Palette, Unplug } from "lucide-react";
 import { useState, useEffect, useRef } from "react";
 import { useWallet } from "../hooks/useWallet";
 
 interface EarningsBarProps {
   isServerConnected: boolean;
-  showAbstraction: boolean;
-  onToggleAbstraction: () => void;
 }
 
 export default function EarningsBar({
   isServerConnected,
-  showAbstraction,
-  onToggleAbstraction,
 }: EarningsBarProps) {
   const { address, isConnected: isWalletConnected, isConnecting, connectWallet, disconnectWallet } = useWallet();
 
@@ -42,20 +38,14 @@ export default function EarningsBar({
     { id: "amber", color: "bg-[#f59e0b]" },
   ];
   return (
-    <header className="flex flex-wrap items-center justify-between gap-y-4 px-4 md:px-8 py-4 text-white w-full z-50">
+    <header className="flex flex-wrap items-center justify-end gap-y-4 px-4 md:px-8 py-4 text-white w-full z-50">
       {showReconnecting && (
         <div className="w-full text-center py-2 bg-amber-500/15 border border-amber-500/30 rounded-lg text-[11px] font-medium text-amber-400 mb-2">
           Server connection lost. Reconnecting...
         </div>
       )}
 
-      {/* LEFT: Placeholder to push right items if needed, or empty */}
-      <div className="flex items-center gap-2 md:gap-4">
-      </div>
-
-      {/* RIGHT: Controls */}
       <div className="flex flex-wrap items-center gap-2 md:gap-4">
-        {/* Server Connection Status */}
         <div className="flex items-center gap-2 bg-black/40 backdrop-blur-3xl px-3 py-1.5 rounded-full border border-white/10 shadow-[0_4px_20px_rgba(0,0,0,0.3)]">
           <div className={`w-1.5 h-1.5 rounded-full ${isServerConnected ? "bg-[#10b981] shadow-[0_0_6px_#10b981]" : "bg-red-500 shadow-[0_0_6px_#ef4444]"}`} />
           <span className="text-[10px] font-medium tracking-wide text-[var(--color-text-secondary)] uppercase">
@@ -63,7 +53,6 @@ export default function EarningsBar({
           </span>
         </div>
 
-        {/* Theme Selector */}
         <div className="flex items-center bg-black/40 backdrop-blur-3xl rounded-full border border-white/10 shadow-[0_4px_20px_rgba(0,0,0,0.3)] transition-all overflow-hidden p-1">
           <button
             onClick={() => setShowThemes(!showThemes)}
@@ -87,7 +76,6 @@ export default function EarningsBar({
           </div>
         </div>
 
-        {/* Web3 Wallet Connect */}
         {isWalletConnected && address ? (
           <div className="flex items-center gap-2 px-3 py-1.5 bg-black/40 backdrop-blur-3xl rounded-xl border border-white/10 shadow-[0_4px_20px_rgba(0,0,0,0.3)]">
             <div className="w-2 h-2 rounded-full bg-[#10b981] shadow-[0_0_8px_#10b981]" />
@@ -113,17 +101,6 @@ export default function EarningsBar({
             {isConnecting ? "Connecting..." : "Connect Wallet"}
           </button>
         )}
-
-        <button
-          onClick={onToggleAbstraction}
-          className={`px-4 py-2 rounded-xl border transition-all text-xs font-semibold tracking-wider uppercase flex items-center gap-2 ${showAbstraction
-              ? "bg-[var(--color-accent)]/20 border-[var(--color-accent)]/30 text-[var(--color-accent)] shadow-[0_0_15px_var(--color-accent-glow)]"
-              : "bg-white/5 border-white/10 text-[var(--color-text-secondary)] hover:bg-white/10 hover:text-white"
-            }`}
-        >
-          <Activity size={14} />
-          {showAbstraction ? "Hide Network" : "View Network"}
-        </button>
       </div>
     </header>
   );

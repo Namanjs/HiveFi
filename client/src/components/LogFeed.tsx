@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { Terminal, ExternalLink, Maximize2, Minimize2, Monitor } from "lucide-react";
+import { Terminal, ExternalLink, Maximize2, Minimize2 } from "lucide-react";
 
 interface LogEvent {
   timestamp: Date;
@@ -13,10 +13,9 @@ interface LogFeedProps {
   events: LogEvent[];
   mode?: "normal" | "enlarged" | "fullscreen" | "minimized";
   onToggleEnlarge?: () => void;
-  onToggleFullScreen?: () => void;
 }
 
-export default function LogFeed({ events, mode = "normal", onToggleEnlarge, onToggleFullScreen }: LogFeedProps) {
+export default function LogFeed({ events, mode = "normal", onToggleEnlarge }: LogFeedProps) {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -65,17 +64,6 @@ export default function LogFeed({ events, mode = "normal", onToggleEnlarge, onTo
               aria-label={isEnlarged ? "Restore event log panel" : "Enlarge event log panel"}
             >
               {isEnlarged ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-            </button>
-          )}
-          {onToggleFullScreen && (
-            <button 
-              type="button"
-              onClick={onToggleFullScreen} 
-              className={`p-1.5 hover:bg-white/10 rounded-lg transition-colors ${mode === "fullscreen" ? "text-(--color-accent) bg-(--color-accent)/20" : "text-white/50 hover:text-white"}`}
-              title="Toggle Fullscreen"
-              aria-label="Toggle event log fullscreen"
-            >
-              <Monitor size={14} />
             </button>
           )}
         </div>

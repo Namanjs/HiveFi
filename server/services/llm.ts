@@ -218,6 +218,185 @@ export async function callSpecialistEndpoint(endpoint: string, prompt: string, n
   }
 }
 
+const MIN_DELAY_MS = 1500;
+let lastGroqCallTime = 0;
+
+async function rateLimitedDelay(): Promise<void> {
+  const now = Date.now();
+  const elapsed = now - lastGroqCallTime;
+  if (elapsed < MIN_DELAY_MS) {
+    await new Promise(r => setTimeout(r, MIN_DELAY_MS - elapsed));
+  }
+  lastGroqCallTime = Date.now();
+}
+
+async function groqCallWithRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries = 3,
+): Promise<T> {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      await rateLimitedDelay();
+      return await fn();
+    } catch (err: any) {
+      if (err.status === 429 && attempt < maxRetries - 1) {
+        const waitMs = Math.pow(2, attempt) * 1000;
+        console.warn(`Groq rate limited (429). Retry ${attempt + 1}/${maxRetries - 1} in ${waitMs}ms`);
+        await new Promise(r => setTimeout(r, waitMs));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error(`Groq call failed after ${maxRetries} retries`);
+}
+
+export function isCodeGenerationPrompt(prompt: string): boolean {
+  const codeGenKeywords = [
+    "build", "create", "make", "generate", "develop", "implement",
+    "app", "website", "web app", "api", "frontend", "backend",
+    "project", "full stack", "react", "node", "express",
+    "component", "page", "dashboard", "portfolio", "landing page",
+    "todo", "blog", "ecommerce", "chat app", "real-time",
+  ];
+
+  const lower = prompt.toLowerCase();
+
+  const hasBuildVerb = codeGenKeywords.slice(0, 6).some(k => lower.includes(k));
+  const hasProjectNoun = codeGenKeywords.slice(6).some(k => lower.includes(k));
+
+  const hasCodeIndicator = /```|`[a-z]+`|function|class|import|export|const |let |var /.test(prompt);
+
+  const negativeKeywords = [
+    "explain", "what is", "how does", "compare", "difference between",
+    "tutorial", "documentation", "docs", "why", "when to use",
+    "best practice", "vs ", "versus", "definition", "meaning",
+  ];
+  const hasNegative = negativeKeywords.some(k => lower.includes(k));
+
+  return ((hasBuildVerb && hasProjectNoun) || hasCodeIndicator) && !hasNegative;
+}
+
+export interface CodeGenPlanResult {
+  type: "code_generation";
+  projectName: string;
+  description: string;
+  plan: {
+    step: string;
+    niche: string;
+    prompt: string;
+  }[];
+}
+
+export async function detectCodeGenIntent(prompt: string): Promise<CodeGenPlanResult | null> {
+  const specialists = await registry.getAllSpecialists();
+  const activeNiches = Array.from(new Set(specialists.map(s => s.niche)));
+  const nicheString = activeNiches.length > 0 ? activeNiches.join(", ") : "None";
+
+  const messages = [
+    {
+      role: "system",
+      content: `You are the HiveFi Code Generation Planner. Your job is to analyze user requests and create a structured plan for multi-agent code generation.
+
+Available specialized agents: ${nicheString}
+
+When a user asks to BUILD, CREATE, or GENERATE a PROJECT (like a web app, API, tool, script, or component), you should:
+1. Decompose the project into a series of steps
+2. Assign each step to the appropriate specialist niche
+3. Write a clear, detailed prompt for each specialist
+
+EXAMPLE:
+User: "Build a todo app with React frontend and Express backend"
+Plan:
+- Step "design": Assign DESIGN to create the UI/UX design system
+- Step "frontend": Assign FRONTEND to implement React components based on the design
+- Step "backend": Assign BACKEND to create the REST API with SQLite
+
+If the user's request is NOT a code generation task (e.g., a simple question, greeting, or single-task), return null.
+
+Available niches: ${nicheString}
+
+IMPORTANT: Return ONLY a valid JSON object. No markdown, no explanation.`,
+    },
+    { role: "user", content: prompt },
+  ];
+
+  const tools = [
+    {
+      type: "function",
+      function: {
+        name: "generate_code_plan",
+        description: "Create a step-by-step plan for multi-agent code generation. Only use this when the user wants to BUILD or CREATE a project.",
+        parameters: {
+          type: "object",
+          properties: {
+            projectName: {
+              type: "string",
+              description: "Short project name (e.g., 'todo-app', 'blog-platform')",
+            },
+            description: {
+              type: "string",
+              description: "Brief description of what the project does",
+            },
+            plan: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  step: {
+                    type: "string",
+                    description: "Step identifier (e.g., 'design', 'frontend', 'backend', 'testing')",
+                  },
+                  niche: {
+                    type: "string",
+                    description: `Specialist niche to assign. MUST be one of: ${nicheString}`,
+                  },
+                  prompt: {
+                    type: "string",
+                    description: "Detailed prompt for this specialist, including what files to create and what the previous step(s) produced",
+                  },
+                },
+                required: ["step", "niche", "prompt"],
+              },
+              minItems: 1,
+            },
+          },
+          required: ["projectName", "description", "plan"],
+        },
+      },
+    },
+  ];
+
+  try {
+    const response = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages,
+      tools,
+      tool_choice: "auto",
+    });
+
+    const responseMessage = response.choices[0].message;
+
+    if (responseMessage.tool_calls && responseMessage.tool_calls.length > 0) {
+      const tc = responseMessage.tool_calls[0];
+      if (tc.type === "function" && tc.function.name === "generate_code_plan") {
+        const args = JSON.parse(tc.function.arguments);
+        return {
+          type: "code_generation",
+          projectName: args.projectName,
+          description: args.description,
+          plan: args.plan,
+        };
+      }
+    }
+
+    return null;
+  } catch (error: any) {
+    console.error("CodeGen intent detection error:", error.message);
+    return null;
+  }
+}
+
 export async function evaluateResult(originalPrompt: string, niche: string, result: string): Promise<string> {
   const systemContent = `You are an expert AI evaluator for the HiveFi decentralized AI network.
 Your job is to evaluate if a specialist AI node has successfully completed the assigned task.

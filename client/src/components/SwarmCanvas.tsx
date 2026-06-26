@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { ReactFlow, Background, BackgroundVariant, useNodesState, useEdgesState, Handle, Position, Node, Edge, ReactFlowProvider, useReactFlow, useNodesInitialized } from "@xyflow/react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Database, LucideIcon, Maximize2, Minimize2, Monitor, Cpu } from "lucide-react";
+import { Database, LucideIcon, Maximize2, Minimize2, Cpu } from "lucide-react";
 import "@xyflow/react/dist/style.css";
 
 interface CustomNodeData extends Record<string, unknown> {
@@ -22,7 +22,6 @@ interface SwarmCanvasProps {
   latestTask?: string;
   availableModels?: any[];
   onToggleEnlarge?: () => void;
-  onToggleFullScreen?: () => void;
 }
 
 const CustomNode = ({ data }: { data: CustomNodeData }) => {
@@ -149,7 +148,7 @@ function FlowFitter({
   return null;
 }
 
-export default function SwarmCanvas({ executionStep, activeSpecialists, currentExecutingNiche = null, mode = "normal", latestTask = "", availableModels = [], onToggleEnlarge, onToggleFullScreen }: SwarmCanvasProps) {
+export default function SwarmCanvas({ executionStep, activeSpecialists, currentExecutingNiche = null, mode = "normal", latestTask = "", availableModels = [], onToggleEnlarge }: SwarmCanvasProps) {
   const [particleAnimation, setParticleAnimation] = useState<"escrow" | "release" | "refund" | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const [containerWidth, setContainerWidth] = useState(600);
@@ -385,12 +384,7 @@ export default function SwarmCanvas({ executionStep, activeSpecialists, currentE
         <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
           {onToggleEnlarge && (
             <button onClick={onToggleEnlarge} className="p-1.5 hover:bg-white/10 rounded-lg text-white/50 hover:text-white transition-colors" data-tooltip-bottom={isEnlarged ? "Restore" : "Enlarge panel"}>
-              {mode === "enlarged" || mode === "fullscreen" ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-            </button>
-          )}
-          {onToggleFullScreen && (
-            <button onClick={onToggleFullScreen} className={`p-1.5 hover:bg-white/10 rounded-lg transition-colors ${mode === "fullscreen" ? "text-[var(--color-secondary-accent)] bg-[var(--color-secondary-accent)]/20" : "text-white/50 hover:text-white"}`} data-tooltip-bottom-right="Toggle Fullscreen">
-              <Monitor size={14} />
+              {isEnlarged ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
             </button>
           )}
         </div>

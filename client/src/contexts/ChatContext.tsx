@@ -27,7 +27,6 @@ interface ChatContextType {
   completedTask: { modelId: string; taskId: string; niche: string } | null;
   showAbstraction: boolean;
   activePanel: "swarm" | "log" | null;
-  isFullScreen: boolean;
   pendingIntent: any;
   pendingPrompt: string;
   input: string;
@@ -48,13 +47,23 @@ interface ChatContextType {
   setCompletedTask: React.Dispatch<React.SetStateAction<{ modelId: string; taskId: string; niche: string } | null>>;
   setShowAbstraction: React.Dispatch<React.SetStateAction<boolean>>;
   setActivePanel: React.Dispatch<React.SetStateAction<"swarm" | "log" | null>>;
-  setIsFullScreen: React.Dispatch<React.SetStateAction<boolean>>;
   setPendingIntent: React.Dispatch<React.SetStateAction<any>>;
   setPendingPrompt: React.Dispatch<React.SetStateAction<string>>;
   handleSendMessage: (promptText: string, maxFee?: number) => Promise<void>;
   executePrompt: (nicheModels: Record<string, string>, maxFee?: number, intentOverride?: any) => Promise<void>;
   handleCancelRequest: () => void;
   handleRate: (score: number) => Promise<void>;
+  workspaceFiles: Record<string, string>;
+  activeFilePath: string | null;
+  activeTab: "network" | "workspace" | "preview";
+  rightPanelWidth: number;
+  setWorkspaceFiles: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  setActiveFilePath: React.Dispatch<React.SetStateAction<string | null>>;
+  setActiveTab: React.Dispatch<React.SetStateAction<"network" | "workspace" | "preview">>;
+  setRightPanelWidth: React.Dispatch<React.SetStateAction<number>>;
+  handleNewFile: (path: string) => void;
+  handleDeleteFile: (path: string) => void;
+  handleRenameFile: (oldPath: string, newPath: string) => void;
 }
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:3001";
@@ -75,7 +84,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [completedTask, setCompletedTask] = useState<{ modelId: string; taskId: string; niche: string } | null>(null);
   const [showAbstraction, setShowAbstraction] = useState<boolean>(false);
   const [activePanel, setActivePanel] = useState<"swarm" | "log" | null>(null);
-  const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
   const [pendingIntent, setPendingIntent] = useState<any>(null);
   const [pendingPrompt, setPendingPrompt] = useState<string>("");
 
@@ -83,6 +91,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [activeStreamIndex, setActiveStreamIndex] = useState<number | null>(null);
   const [availableModels, setAvailableModels] = useState<any[]>([]);
   const [registryLoaded, setRegistryLoaded] = useState(false);
+  const [workspaceFiles, setWorkspaceFiles] = useState<Record<string, string>>({});
+  const [activeFilePath, setActiveFilePath] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"network" | "workspace" | "preview">("network");
+  const [rightPanelWidth, setRightPanelWidth] = useState<number>(480);
   const [selectedModels, setSelectedModels] = useState<Record<string, string>>({});
 
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -215,10 +227,82 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       ]);
     });
 
+    socket.on("FILE_UPDATE", (payload: { path: string; content: string }) => {
+      setWorkspaceFiles(prev => ({ ...prev, [payload.path]: payload.content }));
+      setActiveFilePath(prev => prev || payload.path);
+    });
+
+    socket.on("FILE_DELETE", (payload: { path: string }) => {
+      setWorkspaceFiles(prev => {
+        const next = { ...prev };
+        delete next[payload.path];
+        return next;
+      });
+      setActiveFilePath(prev => prev === payload.path ? null : prev);
+    });
+
+    socket.on("CODE_GEN_COMPLETE", (payload: { files: Record<string, string>; fileTree: any[]; metadata: any }) => {
+      setWorkspaceFiles(payload.files);
+      const paths = Object.keys(payload.files);
+      if (paths.length > 0) {
+        setActiveFilePath(paths[0]);
+        setActiveTab("workspace");
+      }
+      setIsLoading(false);
+      setExecutionStep("COMPLETED");
+      setMessages(prev => [...prev, {
+        sender: "assistant",
+        text: buildCompletionMessage(payload)
+      }]);
+    });
+
     return () => {
       socket.off("STATUS_UPDATE");
+      socket.off("FILE_UPDATE");
+      socket.off("FILE_DELETE");
+      socket.off("CODE_GEN_COMPLETE");
     };
   }, [socket]);
+
+  const handleNewFile = (path: string) => {
+    setWorkspaceFiles(prev => {
+      if (prev[path]) return prev;
+      return { ...prev, [path]: '' };
+    });
+    setActiveFilePath(path);
+  };
+
+  const handleDeleteFile = (path: string) => {
+    setWorkspaceFiles(prev => {
+      const next = { ...prev };
+      delete next[path];
+      return next;
+    });
+    setActiveFilePath(prev => prev === path ? null : prev);
+  };
+
+  const handleRenameFile = (oldPath: string, newPath: string) => {
+    setWorkspaceFiles(prev => {
+      const next = { ...prev };
+      if (next[oldPath] !== undefined) {
+        next[newPath] = next[oldPath];
+        delete next[oldPath];
+      }
+      return next;
+    });
+    setActiveFilePath(newPath);
+  };
+
+  function buildCompletionMessage(payload: any): string {
+    const files = Object.keys(payload.files).length;
+    const steps = payload.metadata?.totalSteps || 0;
+    const iters = payload.metadata?.iteration || 0;
+    return `✅ **Code generation complete** for "${payload.metadata?.name || 'project'}"\n\n` +
+      `- ${files} files created across ${steps} specialists\n` +
+      `- ${iters + 1} iteration${iters > 0 ? 's' : ''} (review loop)\n` +
+      `- Total cost: ${payload.metadata?.totalCost || '0'} USDC\n\n` +
+      `Switch to the **Workspace** tab to view and edit the code, or the **Preview** tab to see it running.`;
+  }
 
   const handleRate = async (score: number) => {
     if (!completedTask) return;
@@ -374,7 +458,6 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     completedTask,
     showAbstraction,
     activePanel,
-    isFullScreen,
     pendingIntent,
     pendingPrompt,
     input,
@@ -395,13 +478,23 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     setCompletedTask,
     setShowAbstraction,
     setActivePanel,
-    setIsFullScreen,
     setPendingIntent,
     setPendingPrompt,
     handleSendMessage,
     executePrompt,
     handleCancelRequest,
-    handleRate
+    handleRate,
+    workspaceFiles,
+    activeFilePath,
+    activeTab,
+    setWorkspaceFiles,
+    setActiveFilePath,
+    setActiveTab,
+    rightPanelWidth,
+    setRightPanelWidth,
+    handleNewFile,
+    handleDeleteFile,
+    handleRenameFile,
   };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;
