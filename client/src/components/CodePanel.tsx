@@ -1,4 +1,4 @@
-import { useMemo, useCallback } from "react";
+import React, { useMemo, useCallback } from "react";
 import Editor from "@monaco-editor/react";
 import { useChat } from "../contexts/ChatContext";
 import { FolderOpen, FileCode2, Plus, Trash2, AlertTriangle } from "lucide-react";
@@ -59,7 +59,7 @@ export default function CodePanel() {
     if (name) handleNewFile(name);
   };
 
-  const renderTree = (node: Record<string, any>, basePath: string): JSX.Element[] => {
+  const renderTree = (node: Record<string, any>, basePath: string): React.ReactNode[] => {
     return Object.entries(node).map(([key, value]) => {
       const fullPath = basePath ? `${basePath}/${key}` : key;
       if (value === null) {

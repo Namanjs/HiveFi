@@ -444,8 +444,8 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, ratingPr
             )}
           </button>
         </form>
-        <div className="flex items-center justify-between mt-3 px-4">
-          <div className="flex items-center gap-2 text-xs text-white/40 font-medium hover:text-white/70 transition-colors group/fee">
+        <div className="flex flex-wrap items-center justify-center sm:justify-between gap-4 mt-3 px-4">
+          <div className="flex items-center justify-center gap-2 text-xs text-white/40 font-medium hover:text-white/70 transition-colors group/fee shrink-0 whitespace-nowrap">
             <span>Max Fee:</span>
             <div className="flex items-center gap-1 bg-black/20 rounded-md px-1 py-0.5 border border-white/5 group-hover/fee:border-white/20 transition-colors">
               <button 
@@ -469,7 +469,7 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, ratingPr
             </div>
             <span>USDC</span>
           </div>
-          <div className="text-xs text-white/30 font-medium">
+          <div className="text-xs text-white/30 font-medium text-center sm:text-right max-w-full">
             HiveFi Orchestrator may make mistakes. Verify transactions.
           </div>
         </div>

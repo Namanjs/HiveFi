@@ -189,7 +189,7 @@ export default function Deploy() {
       const receipt1 = await tx1.wait();
 
       // Extract Model ID from event
-      let modelId: bigint;
+      let modelId: bigint = 0n;
       for (const log of receipt1.logs) {
         try {
           const parsed = registry.interface.parseLog(log);
@@ -201,6 +201,8 @@ export default function Deploy() {
           // ignore irrelevant logs
         }
       }
+
+      if (modelId === 0n) throw new Error("ModelRegistered event not found in transaction receipt");
 
       // 3. Get Test USDC from Faucet
       setDeployStep("Please confirm 'Claim Test USDC' transaction in your wallet...");
@@ -247,7 +249,7 @@ export default function Deploy() {
 
       const response = await fetch(`${import.meta.env.VITE_API_BASE}/api/registry/register-endpoint`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-api-key": import.meta.env.VITE_API_KEY },
         body: JSON.stringify({
           modelId: Number(modelId),
           providerId: Number(actualProviderId),

@@ -20,8 +20,6 @@ export default function App() {
     handleRate,
     availableModels,
     socketId,
-    activePanel,
-    setActivePanel,
   } = useChat();
 
   return (

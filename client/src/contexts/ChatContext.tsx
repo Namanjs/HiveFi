@@ -212,6 +212,45 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         case "DIRECT_RESPONSE":
           logMsg = "Orchestrator: Prompt resolved natively. Skipping delegation.";
           break;
+        case "CODE_GEN_STEP_START":
+          logMsg = `Code Gen: Starting step "${payload.step}" (${payload.niche})`;
+          break;
+        case "CODE_GEN_EXECUTING":
+          logMsg = `Code Gen: ${payload.niche} executing...`;
+          break;
+        case "CODE_GEN_STEP_COMPLETE":
+          logMsg = `Code Gen: ${payload.niche} complete — ${payload.filesCreated} files created`;
+          break;
+        case "CODE_GEN_EXECUTION_FAILED":
+          logMsg = `Code Gen: ${payload.niche} failed — ${payload.error}`;
+          break;
+        case "CODE_GEN_INVALID_OPS":
+          logMsg = `Code Gen: ${payload.niche} produced invalid operations: ${payload.invalid?.join(", ")}`;
+          break;
+        case "CODE_GEN_REVIEWING":
+          logMsg = `Code Gen: Reviewing iteration ${payload.iteration}...`;
+          break;
+        case "CODE_GEN_REVIEW_RESULT":
+          logMsg = `Code Gen: Review ${payload.passed ? "passed" : "needs fixes"} (score: ${payload.score})`;
+          break;
+        case "CODE_GEN_PASSED":
+          logMsg = "Code Gen: All quality checks passed!";
+          break;
+        case "CODE_GEN_UNPARSED_OUTPUT":
+          logMsg = `Code Gen: ${payload.niche} output unparsed — saved to _unparsed/`;
+          break;
+        case "CODE_GEN_SKIP_STEP":
+          logMsg = `Code Gen: Skipping step "${payload.step}" — ${payload.reason}`;
+          break;
+        case "CODE_GEN_ABORTED":
+          logMsg = `Code Gen: Aborted — ${payload.reason}`;
+          break;
+        case "CODE_GEN_SESSION_COMPLETE":
+          logMsg = `Code Gen: Session complete — ${payload.message}`;
+          break;
+        case "SPECIALIST_UNAVAILABLE":
+          logMsg = `Code Gen: ${payload.niche} specialist is offline`;
+          break;
         default:
           logMsg = `System status: ${payload.status}`;
       }
@@ -352,7 +391,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": "hivefi-dev-key-local"
+          "x-api-key": import.meta.env.VITE_API_KEY
         },
         body: JSON.stringify({
           prompt: currentPrompt,
@@ -407,7 +446,7 @@ export function ChatProvider({ children }: { children: ReactNode }) {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": "hivefi-dev-key-local"
+          "x-api-key": import.meta.env.VITE_API_KEY
         },
         body: JSON.stringify({
           prompt: promptText,

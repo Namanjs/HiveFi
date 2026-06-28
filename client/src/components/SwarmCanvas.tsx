@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import { ReactFlow, Background, BackgroundVariant, useNodesState, useEdgesState, Handle, Position, Node, Edge, ReactFlowProvider, useReactFlow, useNodesInitialized } from "@xyflow/react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Database, LucideIcon, Maximize2, Minimize2, Cpu } from "lucide-react";
+import { Database, LucideIcon, Maximize2, Minimize2, Monitor, Cpu } from "lucide-react";
 import "@xyflow/react/dist/style.css";
 
 interface CustomNodeData extends Record<string, unknown> {

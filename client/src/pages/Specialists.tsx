@@ -35,21 +35,7 @@ export default function Specialists() {
       const res = await fetch(`${API_BASE}/api/registry`);
       const data = await res.json();
       if (data.success && data.specialists) {
-        const uniqueModels = new Map();
-        data.specialists.forEach((m: any) => {
-          if (!uniqueModels.has(m.name)) {
-            uniqueModels.set(m.name, m);
-          } else {
-            const existing = uniqueModels.get(m.name);
-            // Smart deduplication: Prefer the node that actually has ratings, or is online
-            if (m.totalRatings > existing.totalRatings) {
-              uniqueModels.set(m.name, m);
-            } else if (m.totalRatings === existing.totalRatings && m.isOnline && !existing.isOnline) {
-              uniqueModels.set(m.name, m);
-            }
-          }
-        });
-        setSpecialists(Array.from(uniqueModels.values()));
+        setSpecialists(data.specialists);
       } else {
         setError(data.error || "Failed to load specialists");
       }
