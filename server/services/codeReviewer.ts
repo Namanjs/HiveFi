@@ -1,10 +1,8 @@
-import Groq from "groq-sdk";
 import type { ProjectState, CodeGenPlan, ReviewResult } from "./projectState";
 import type { SpecialistInfo } from "./registry";
 import * as llm from "./llm";
 import * as registry from "./registry";
-
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || "dummy_key_for_tests" });
+import { logger } from "./logger";
 
 export async function reviewProject(
   state: ProjectState,
@@ -50,12 +48,13 @@ export async function reviewProject(
       llmReview = await reviewViaGroq(state, plan);
     }
   } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
     llmReview = {
       passed: heuristicIssues.length === 0,
       score: Math.max(0, 100 - heuristicIssues.length * 20),
-      feedback: heuristicIssues.length > 0
+      feedback: `LLM review unavailable (${errMsg}). ` + (heuristicIssues.length > 0
         ? `Heuristic checks found ${heuristicIssues.length} issue(s). ${heuristicIssues.join("; ")}`
-        : "All heuristic checks passed.",
+        : "All heuristic checks passed."),
       issues: heuristicIssues,
     };
   }
@@ -111,7 +110,7 @@ Respond with a JSON object:
 }`;
 
   try {
-    const response = await groq.chat.completions.create({
+    const response = await llm.groqCallWithRetry(() => llm.groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages: [
         {
@@ -121,7 +120,7 @@ Respond with a JSON object:
         { role: "user", content: prompt },
       ],
       response_format: { type: "json_object" },
-    });
+    }));
 
     const content = response.choices[0]?.message?.content;
     if (content) {
@@ -134,15 +133,11 @@ Respond with a JSON object:
       };
     }
   } catch (err) {
-    console.error("Groq review failed:", err);
+    logger.error("Groq review failed:", err);
+    throw err;
   }
 
-  return {
-    passed: true,
-    score: 70,
-    feedback: "Review could not be completed. Continuing with caution.",
-    issues: [],
-  };
+  throw new Error("reviewViaGroq: no content returned from Groq");
 }
 
 async function reviewViaSpecialist(
@@ -186,8 +181,9 @@ Respond ONLY with a JSON object:
       };
     }
   } catch (err) {
-    console.error("Specialist review failed:", err);
+    logger.error("Specialist review failed:", err);
+    throw err;
   }
 
-  return { passed: true, score: 70, feedback: "", issues: [] };
+  throw new Error("reviewViaSpecialist: no valid JSON returned from specialist");
 }

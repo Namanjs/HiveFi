@@ -11,18 +11,7 @@ import { parseFileOperations, applyOperations, validateOperations } from "./file
 import { buildContext } from "./contextPacker";
 import type { OrchestrationResult } from "./orchestrator";
 import { reviewProject } from "./codeReviewer";
-
-const MIN_DELAY_MS = 1500;
-let lastGroqCallTime = 0;
-
-async function rateLimitedDelay(): Promise<void> {
-  const now = Date.now();
-  const elapsed = now - lastGroqCallTime;
-  if (elapsed < MIN_DELAY_MS) {
-    await new Promise(r => setTimeout(r, MIN_DELAY_MS - elapsed));
-  }
-  lastGroqCallTime = Date.now();
-}
+import { rateLimitedDelay } from "./llm";
 
 export async function orchestrateCodeGen(
   plan: CodeGenPlan,
@@ -47,7 +36,7 @@ export async function orchestrateCodeGen(
   let totalCost = 0;
   const allStepOutputs: string[] = [];
   let finalReviewFeedback: string | undefined;
-
+  const originalPrompts = new Map(plan.plan.map(s => [s.step, s.prompt]));
   const sessionEscrowTaskId: string | undefined = undefined;
 
   for (let iteration = 0; iteration < MAX_CODE_GEN_ITERATIONS; iteration++) {
@@ -190,6 +179,7 @@ export async function orchestrateCodeGen(
       }
 
       for (const step of plan.plan) {
+        step.prompt = originalPrompts.get(step.step)!;
         step.prompt += `\n\n[REVIEW FEEDBACK (Iteration ${iteration + 1})]\n${review.feedback}`;
         if (review.stepFeedback && review.stepFeedback[step.step]) {
           step.prompt += `\n${review.stepFeedback[step.step]}`;

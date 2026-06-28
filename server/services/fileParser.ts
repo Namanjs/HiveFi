@@ -48,6 +48,15 @@ export function parseFileOperations(text: string): FileOperation[] {
     }
   }
 
+  const deleteBlockRegex = /```delete:([^\n]+)```/g;
+  while ((match = deleteBlockRegex.exec(text)) !== null) {
+    const path = match[1].trim();
+    if (!seenPaths.has(path)) {
+      operations.push({ type: "delete", path });
+      seenPaths.add(path);
+    }
+  }
+
   return operations;
 }
 

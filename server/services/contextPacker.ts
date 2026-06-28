@@ -18,7 +18,7 @@ const NICHE_FILE_MAP: Record<string, (path: string) => boolean> = {
     const ext = path.split(".").pop()?.toLowerCase();
     const isFrontendFile = ["html", "css", "tsx", "jsx", "ts", "js", "scss", "less", "svg", "json"].includes(ext || "");
     const isServerFile = path.startsWith("server/") || path.startsWith("api/");
-    return isFrontendFile || path.includes("design") || path.includes("spec") || path.endsWith(".md");
+    return (isFrontendFile && !isServerFile) || path.includes("design") || path.includes("spec") || path.endsWith(".md");
   },
   "BACKEND": (path) => {
     const ext = path.split(".").pop()?.toLowerCase();
@@ -93,19 +93,6 @@ export function buildContext(
       let truncatedLines: string[] = [];
 
       let naturalBreakIdx = lines.length;
-      for (let i = 0; i < lines.length; i++) {
-        if (naturalBreakIdx === lines.length) {
-          for (let j = i; j >= 0; j--) {
-            if (lines[j].trim() === "" || /^(export |function |class |interface |type |const |import )/.test(lines[j])) {
-              naturalBreakIdx = j;
-              break;
-            }
-          }
-          if (naturalBreakIdx === lines.length) naturalBreakIdx = i;
-        }
-        break;
-      }
-
       let charCount = 0;
       for (let i = 0; i < lines.length; i++) {
         if (charCount + lines[i].length + 1 > maxChars) {
