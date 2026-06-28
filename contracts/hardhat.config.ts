@@ -18,7 +18,7 @@ const config: HardhatUserConfig = {
   networks: {
     hardhat: {},
     baseSepolia: {
-      url: process.env.BASE_RPC_URL || process.env.BASE_SEPOLIA_RPC || "https://sepolia.base.org",
+      url: process.env.SEPOLIA_RPC || "https://ethereum-sepolia-rpc.publicnode.com",
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : (process.env.ORCHESTRATOR_PK ? [process.env.ORCHESTRATOR_PK] : []),
     },
   },

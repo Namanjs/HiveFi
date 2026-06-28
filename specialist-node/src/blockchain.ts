@@ -7,19 +7,19 @@ let registryContract: ethers.Contract | null = null;
 let specialistWallet: ethers.Wallet | null = null;
 
 export async function initializeBlockchain() {
-  if (!config.BASE_RPC_URL || !config.HIVE_REGISTRY_ADDRESS) {
-    throw new Error("Missing BASE_RPC_URL or HIVE_REGISTRY_ADDRESS in config");
+  if (!config.SEPOLIA_RPC || !config.HIVE_REGISTRY_ADDRESS) {
+    throw new Error("Missing SEPOLIA_RPC or HIVE_REGISTRY_ADDRESS in config");
   }
   
   if (!config.SPECIALIST_PRIVATE_KEY) {
     throw new Error("Missing SPECIALIST_PRIVATE_KEY in config");
   }
 
-  provider = new ethers.JsonRpcProvider(config.BASE_RPC_URL);
+  provider = new ethers.JsonRpcProvider(config.SEPOLIA_RPC);
   specialistWallet = new ethers.Wallet(config.SPECIALIST_PRIVATE_KEY, provider);
   
   registryContract = new ethers.Contract(config.HIVE_REGISTRY_ADDRESS, (HiveRegistry_ABI as any).abi || HiveRegistry_ABI, provider);
-  console.log(`Connected to blockchain at ${config.BASE_RPC_URL}`);
+  console.log(`Connected to blockchain at ${config.SEPOLIA_RPC}`);
   console.log(`Specialist Wallet Address: ${specialistWallet.address}`);
 }
 

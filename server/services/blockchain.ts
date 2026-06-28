@@ -1,9 +1,6 @@
 import { logger } from "./logger";
 import { ethers } from "ethers";
 import { Mutex } from "async-mutex";
-import * as dotenv from "dotenv";
-
-dotenv.config();
 
 const MockUSDC_ABI = [
   "function approve(address spender, uint256 amount) public returns (bool)",
@@ -42,7 +39,7 @@ export interface TaskActionResult {
 
 export async function initializeBlockchain(): Promise<void> {
 
-  const rpcUrl = process.env.BASE_SEPOLIA_RPC || "https://sepolia.base.org";
+  const rpcUrl = process.env.SEPOLIA_RPC || "https://ethereum-sepolia-rpc.publicnode.com";
   const usdcAddr = process.env.MOCK_USDC_ADDRESS;
   const registryAddr = process.env.HIVE_REGISTRY_ADDRESS;
 
@@ -84,21 +81,20 @@ export async function initializeBlockchain(): Promise<void> {
   logger.info("Blockchain service successfully initialized.");
 }
 
-async function sendTxWithMutexAsync(txFn: () => Promise<ethers.ContractTransactionResponse>): Promise<{ hash: string }> {
+async function sendTxWithMutexAsync(txFn: () => Promise<ethers.ContractTransactionResponse>): Promise<{ hash: string; receipt: ethers.ContractTransactionReceipt | null }> {
   return await txMutex.runExclusive(async () => {
     const tx = await txFn();
     logger.info(`Transaction submitted: ${tx.hash}`);
-    
-    // Async wait for confirmation without blocking the return
-    tx.wait().then((receipt: ethers.ContractTransactionReceipt | null) => {
+    try {
+      const receipt = await tx.wait();
       if (receipt) {
         logger.info(`Transaction confirmed in block ${receipt.blockNumber}`);
       }
-    }).catch((err: any) => {
+      return { hash: tx.hash, receipt };
+    } catch (err: any) {
       logger.error(`Transaction ${tx.hash} failed to confirm:`, err);
-    });
-    
-    return { hash: tx.hash };
+      throw new Error(`Transaction ${tx.hash} reverted on-chain: ${err.reason || err.message}`);
+    }
   });
 }
 
@@ -126,7 +122,7 @@ export async function requestTaskOnChain(
         mode
       );
     } catch (err: any) {
-      console.error("Static call failed! Revert reason:", err);
+      logger.error("Static call failed! Revert reason:", err);
       throw new Error("Pre-flight check failed: " + (err.reason || err.message));
     }
 
@@ -176,14 +172,14 @@ export async function settleTaskOnChain(
 
   logger.info(`Settling task ${taskId} with signature...`);
 
-  const receipt = await sendTxWithMutexAsync(() =>
+  const { hash } = await sendTxWithMutexAsync(() =>
     registryContract!.settleTask(taskId, finalAmountBase, resultHash, signature, {
       gasLimit: 400000n,
     })
   );
 
   return {
-    txHash: receipt.hash,
+    txHash: hash,
   };
 }
 
@@ -197,14 +193,14 @@ export async function rejectTaskOnChain(
 
   logger.info(`Rejecting task ${taskId} (initiating three-way split)...`);
 
-  const receipt = await sendTxWithMutexAsync(() =>
+  const { hash } = await sendTxWithMutexAsync(() =>
     registryContract!.rejectTask(taskId, finalAmountBase, resultHash, signature, {
       gasLimit: 400000n,
     })
   );
 
   return {
-    txHash: receipt.hash,
+    txHash: hash,
   };
 }
 
@@ -215,14 +211,8 @@ export function getRegistryContract(): ethers.Contract | null {
 }
 
 export function getAddresses(): Addresses {
-  if (!walletA || !walletB) {
-    return {
-      walletA: walletA ? walletA.address : "",
-      walletB: walletB ? walletB.address : "",
-    };
-  }
   return {
-    walletA: walletA.address,
-    walletB: walletB.address,
+    walletA: walletA ? walletA.address : "",
+    walletB: walletB ? walletB.address : "",
   };
 }

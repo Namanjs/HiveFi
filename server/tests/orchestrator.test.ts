@@ -97,7 +97,7 @@ describe('Orchestrator Integration Tests', () => {
       'FUNDS_RELEASED'
     ]);
 
-    expect(blockchain.requestTaskOnChain).toHaveBeenCalledWith('0xclient', '1', '10', 'Write a python script', 1);
+    expect(blockchain.requestTaskOnChain).toHaveBeenCalledWith('0xclient', '1', '10', 'Write a python script', 0);
     expect(blockchain.settleTaskOnChain).toHaveBeenCalledWith('123', '50000', '0xdef', '0xabc');
     expect(taskHistory.appendTask).toHaveBeenCalled();
   });

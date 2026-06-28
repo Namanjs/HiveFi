@@ -15,7 +15,7 @@ export interface Config {
   HF_TIMEOUT_MS: number;
   SYSTEM_PROMPT?: string;
   AUTH_SECRET: string;
-  BASE_RPC_URL: string;
+  SEPOLIA_RPC: string;
   HIVE_REGISTRY_ADDRESS: string;
 }
 
@@ -61,7 +61,7 @@ export function loadConfig(): Config {
     HF_TIMEOUT_MS: parseInt(process.env.HF_TIMEOUT_MS || '60000', 10),
     SYSTEM_PROMPT: process.env.SYSTEM_PROMPT,
     AUTH_SECRET: process.env.AUTH_SECRET!,
-    BASE_RPC_URL: process.env.BASE_RPC_URL || 'http://127.0.0.1:8545',
+    SEPOLIA_RPC: process.env.SEPOLIA_RPC || 'http://127.0.0.1:8545',
     HIVE_REGISTRY_ADDRESS: process.env.HIVE_REGISTRY_ADDRESS || '',
   };
 }
