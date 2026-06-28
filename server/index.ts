@@ -1,5 +1,5 @@
 import { logger } from "./services/logger";
-import express, { Request, Response } from "express";
+import express, { Request, Response, NextFunction } from "express";
 import helmet from "helmet";
 import http from "http";
 import { Server, Socket } from "socket.io";
@@ -129,6 +129,12 @@ interface OrchestrationRequestBody {
 app.post("/api/orchestrate", orchestrateLimiter, requireApiKey, async (req: Request<{}, {}, OrchestrationRequestBody>, res: Response): Promise<any> => {
   const { prompt, socketId, maxFee, clientWallet, delegationMode, manualModelId, customEndpoint } = req.body;
 
+  req.setTimeout(300000, () => {
+    if (!res.headersSent) {
+      res.status(504).json({ success: false, error: "Orchestration timed out after 5 minutes" });
+    }
+  });
+
   if (!prompt || typeof prompt !== 'string') {
     return res.status(400).json({ success: false, error: "Prompt must be a non-empty string" });
   }
@@ -139,7 +145,7 @@ app.post("/api/orchestrate", orchestrateLimiter, requireApiKey, async (req: Requ
 
   // Retrieve client socket if available
   const socket = socketId ? io.sockets.sockets.get(socketId) : null;
-  const targetSocket = socket || io; // fallback to broadcast if socket not found
+  const targetSocket = socket || { emit: () => {} }; // use noop socket instead of broadcasting to all
 
   try {
     const result = await orchestrate(prompt, targetSocket, maxFee, clientWallet, delegationMode, manualModelId, customEndpoint, req.body.preAnalyzedIntent, req.body.nicheModels);
@@ -182,7 +188,7 @@ app.get("/api/registry", async (_req: Request, res: Response): Promise<any> => {
 });
 
 // POST /api/registry/register-endpoint
-app.post("/api/registry/register-endpoint", async (req: Request, res: Response): Promise<any> => {
+app.post("/api/registry/register-endpoint", requireApiKey, async (req: Request, res: Response): Promise<any> => {
   const { modelId, providerId, endpointUrl } = req.body;
   const id = providerId !== undefined ? providerId : modelId;
   
@@ -206,7 +212,7 @@ app.post("/api/registry/register-endpoint", async (req: Request, res: Response):
 });
 
 // POST /api/ratings
-app.post("/api/ratings", async (req: Request, res: Response): Promise<any> => {
+app.post("/api/ratings", requireApiKey, async (req: Request, res: Response): Promise<any> => {
   const { modelId, taskId, score, niche } = req.body;
   if (!modelId || typeof modelId !== 'string' || 
       !taskId || typeof taskId !== 'string' || 
@@ -324,6 +330,12 @@ app.get("/api/dashboard/:walletAddress", async (req: Request, res: Response): Pr
     logger.error("Error fetching dashboard data:", error);
     return res.status(500).json({ success: false, error: parseHiveFiError(error) });
   }
+});
+
+// Global error handler (must be after all routes)
+app.use((err: any, req: Request, res: Response, _next: NextFunction) => {
+  logger.error("Unhandled error:", err);
+  res.status(500).json({ success: false, error: parseHiveFiError(err) });
 });
 
 const PORT = process.env.PORT || 3001;

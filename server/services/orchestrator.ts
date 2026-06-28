@@ -60,7 +60,7 @@ async function orchestrateChain(
     // Escrow
     socket.emit("STATUS_UPDATE", { status: "ESCROW_TX_PENDING", niche, price: specialist.price, modelName: specialist.modelName });
     const escrowAmount = maxFee !== undefined ? maxFee.toString() : "1.0";
-    const escrowReceipt = await blockchain.requestTaskOnChain(clientWallet, specialist.id, escrowAmount, step.sub_prompt, 1); // 1 = CHAT mode
+    const escrowReceipt = await blockchain.requestTaskOnChain(clientWallet, specialist.id, escrowAmount, step.sub_prompt, 0); // 0 = CHAT mode
     const taskId = escrowReceipt.taskId;
     socket.emit("STATUS_UPDATE", { status: "ESCROW_LOCKED", taskId, txHash: escrowReceipt.txHash, amount: escrowAmount, niche });
 
@@ -271,7 +271,7 @@ export async function orchestrate(
     specialist.id,
     escrowAmount,
     intent.sub_prompt,
-    1
+    0
   );
 
   const taskId = escrowReceipt.taskId;

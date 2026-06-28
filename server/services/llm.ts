@@ -1,10 +1,8 @@
 import Groq from "groq-sdk";
-import * as dotenv from "dotenv";
 import * as registry from "./registry";
+import { logger } from "./logger";
 
-dotenv.config();
-
-const groq = new Groq({
+export const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY || "dummy_key_for_tests",
 });
 
@@ -82,14 +80,10 @@ Do NOT try to solve domain-specific tasks natively. Only answer directly if the 
 
   let response;
   try {
-    response = await groq.chat.completions.create(callOptions);
+    response = await groqCallWithRetry(() => groq.chat.completions.create(callOptions));
   } catch (error: any) {
-    console.error("Groq Intent Detection Error:", error.message || error);
-    // Fallback if the model hallucinates a non-existent tool (common Groq 400 error)
-    return {
-      delegate: false,
-      text: "I encountered an internal routing error (hallucinated tool call). Please try rephrasing your request."
-    };
+    logger.error("Groq Intent Detection Error:", error.message || error);
+    throw error;
   }
 
   const responseMessage = response.choices[0].message;
@@ -221,7 +215,7 @@ export async function callSpecialistEndpoint(endpoint: string, prompt: string, n
 const MIN_DELAY_MS = 1500;
 let lastGroqCallTime = 0;
 
-async function rateLimitedDelay(): Promise<void> {
+export async function rateLimitedDelay(): Promise<void> {
   const now = Date.now();
   const elapsed = now - lastGroqCallTime;
   if (elapsed < MIN_DELAY_MS) {
@@ -230,7 +224,7 @@ async function rateLimitedDelay(): Promise<void> {
   lastGroqCallTime = Date.now();
 }
 
-async function groqCallWithRetry<T>(
+export async function groqCallWithRetry<T>(
   fn: () => Promise<T>,
   maxRetries = 3,
 ): Promise<T> {
@@ -241,7 +235,7 @@ async function groqCallWithRetry<T>(
     } catch (err: any) {
       if (err.status === 429 && attempt < maxRetries - 1) {
         const waitMs = Math.pow(2, attempt) * 1000;
-        console.warn(`Groq rate limited (429). Retry ${attempt + 1}/${maxRetries - 1} in ${waitMs}ms`);
+        logger.warn(`Groq rate limited (429). Retry ${attempt + 1}/${maxRetries - 1} in ${waitMs}ms`);
         await new Promise(r => setTimeout(r, waitMs));
         continue;
       }
@@ -271,10 +265,14 @@ export function isCodeGenerationPrompt(prompt: string): boolean {
     "explain", "what is", "how does", "compare", "difference between",
     "tutorial", "documentation", "docs", "why", "when to use",
     "best practice", "vs ", "versus", "definition", "meaning",
+    "tell me about", "what's the", "how to", "guide", "example of",
+    "describe", "define", "overview", "introduction to",
   ];
   const hasNegative = negativeKeywords.some(k => lower.includes(k));
 
-  return ((hasBuildVerb && hasProjectNoun) || hasCodeIndicator) && !hasNegative;
+  const explicitBuildIntent = /^(i want to|please|can you|need to|help me)\s*(build|create|make|generate|develop)/.test(lower);
+
+  return ((hasBuildVerb && hasProjectNoun && !hasNegative) || hasCodeIndicator || explicitBuildIntent) && !hasNegative;
 }
 
 export interface CodeGenPlanResult {
@@ -293,7 +291,7 @@ export async function detectCodeGenIntent(prompt: string): Promise<CodeGenPlanRe
   const activeNiches = Array.from(new Set(specialists.map(s => s.niche)));
   const nicheString = activeNiches.length > 0 ? activeNiches.join(", ") : "None";
 
-  const messages = [
+  const messages: any[] = [
     {
       role: "system",
       content: `You are the HiveFi Code Generation Planner. Your job is to analyze user requests and create a structured plan for multi-agent code generation.
@@ -321,7 +319,7 @@ IMPORTANT: Return ONLY a valid JSON object. No markdown, no explanation.`,
     { role: "user", content: prompt },
   ];
 
-  const tools = [
+  const tools: any[] = [
     {
       type: "function",
       function: {
@@ -368,12 +366,12 @@ IMPORTANT: Return ONLY a valid JSON object. No markdown, no explanation.`,
   ];
 
   try {
-    const response = await groq.chat.completions.create({
+    const response = await groqCallWithRetry(() => groq.chat.completions.create({
       model: "llama-3.3-70b-versatile",
       messages,
       tools,
       tool_choice: "auto",
-    });
+    }));
 
     const responseMessage = response.choices[0].message;
 
@@ -392,8 +390,8 @@ IMPORTANT: Return ONLY a valid JSON object. No markdown, no explanation.`,
 
     return null;
   } catch (error: any) {
-    console.error("CodeGen intent detection error:", error.message);
-    return null;
+    logger.error("CodeGen intent detection error:", error.message);
+    throw error;
   }
 }
 
@@ -411,13 +409,13 @@ You must analyze the specialist's output and determine if it represents a valid,
 
 Reply STRICTLY with 'YES' if it passes, or 'NO' if it fails. Do not output any other text or explanations.`;
 
-  const response = await groq.chat.completions.create({
+  const response = await groqCallWithRetry(() => groq.chat.completions.create({
     model: "llama-3.3-70b-versatile",
     messages: [
       { role: "system", content: systemContent },
       { role: "user", content: result },
     ],
-  });
+  }));
 
   const evaluation = (response.choices[0].message.content || "").trim();
   return evaluation.toUpperCase() === "YES" ? "YES" : "NO";

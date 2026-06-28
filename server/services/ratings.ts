@@ -1,24 +1,28 @@
 import * as path from 'path';
+import { Mutex } from 'async-mutex';
 import { readJSON, atomicWriteJSON } from './fileUtils';
 
 const ratingsPath = path.join(__dirname, '../config/ratings.json');
+const ratingsMutex = new Mutex();
 
 export async function submitRating(modelId: string, taskId: string, score: number, niche: string): Promise<void> {
   if (score < 1 || score > 5) throw new Error("Score must be between 1 and 5");
   
-  const ratings = await readJSON<any>(ratingsPath, {});
+  await ratingsMutex.runExclusive(async () => {
+    const ratings = await readJSON<any>(ratingsPath, {});
 
-  if (!ratings[modelId]) {
-    ratings[modelId] = { totalRatings: 0, totalScore: 0, averageScore: 0, history: [] };
-  }
+    if (!ratings[modelId]) {
+      ratings[modelId] = { totalRatings: 0, totalScore: 0, averageScore: 0, history: [] };
+    }
 
-  const modelData = ratings[modelId];
-  modelData.history.push({ score, taskId, timestamp: Date.now(), niche });
-  modelData.totalRatings += 1;
-  modelData.totalScore += score;
-  modelData.averageScore = modelData.totalScore / modelData.totalRatings;
+    const modelData = ratings[modelId];
+    modelData.history.push({ score, taskId, timestamp: Date.now(), niche });
+    modelData.totalRatings += 1;
+    modelData.totalScore += score;
+    modelData.averageScore = modelData.totalScore / modelData.totalRatings;
 
-  await atomicWriteJSON(ratingsPath, ratings);
+    await atomicWriteJSON(ratingsPath, ratings);
+  });
 }
 
 export async function getRating(modelId: string): Promise<{ averageScore: number, totalRatings: number } | null> {

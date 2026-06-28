@@ -1,5 +1,6 @@
 import { logger } from "./logger";
 import * as path from 'path';
+import { Mutex } from 'async-mutex';
 import { readJSON, atomicWriteJSON } from './fileUtils';
 
 export interface TaskRecord {
@@ -17,17 +18,20 @@ export interface TaskRecord {
 
 const historyPath = path.join(__dirname, '../config/task-history.json');
 const MAX_RECORDS = 1000;
+const historyMutex = new Mutex();
 
 export async function appendTask(record: TaskRecord): Promise<void> {
   try {
-    let history: TaskRecord[] = await readJSON<TaskRecord[]>(historyPath, []);
-    history.push(record);
-    
-    if (history.length > MAX_RECORDS) {
-      history = history.slice(history.length - MAX_RECORDS);
-    }
-    
-    await atomicWriteJSON(historyPath, history);
+    await historyMutex.runExclusive(async () => {
+      let history: TaskRecord[] = await readJSON<TaskRecord[]>(historyPath, []);
+      history.push(record);
+      
+      if (history.length > MAX_RECORDS) {
+        history = history.slice(history.length - MAX_RECORDS);
+      }
+      
+      await atomicWriteJSON(historyPath, history);
+    });
   } catch (error) {
     logger.error('Failed to append task history:', error);
   }

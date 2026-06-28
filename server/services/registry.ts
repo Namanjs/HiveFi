@@ -25,9 +25,9 @@ export async function getSpecialistByNiche(niche: string, maxFee?: number): Prom
 
   let availableProviders = [];
 
-  const modelCount = await contract.modelIds.length;
+  const modelCount = await contract.nextModelId();
   for (let i = 0; i < Number(modelCount); i++) {
-    const modelId = await contract.modelIds(i);
+    const modelId = i; // old deployed contract uses sequential IDs; no modelIds() array
     const model = await contract.models(modelId);
     if (!model.isActive || model.niche.toUpperCase() !== niche.toUpperCase()) continue;
 
@@ -124,9 +124,9 @@ export async function getAllSpecialists(healthStatus?: Record<string, boolean>):
   const allSpecialists = [];
   const endpoints = await readJSON<any>(endpointsPath, {});
 
-  const modelCount = await contract.modelIds.length;
+  const modelCount = await contract.nextModelId();
   for (let i = 0; i < Number(modelCount); i++) {
-    const modelId = await contract.modelIds(i);
+    const modelId = i; // old deployed contract uses sequential IDs; no modelIds() array
     const model = await contract.models(modelId);
     if (!model.isActive) continue;
 
