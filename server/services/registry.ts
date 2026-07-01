@@ -6,6 +6,10 @@ import { readJSON, atomicWriteJSON } from './fileUtils';
 
 const endpointsPath = path.join(__dirname, '../config/endpoints.json');
 
+let cachedSpecialistList: any[] | null = null;
+let lastCacheUpdate = 0;
+const CACHE_TTL_MS = 30000; // 30 seconds
+
 export interface SpecialistInfo {
   id: string; // providerId
   modelId: string;
@@ -17,69 +21,53 @@ export interface SpecialistInfo {
   slashCount: number;
 }
 
+import { logger } from './logger';
+
 export async function getSpecialistByNiche(niche: string, maxFee?: number): Promise<SpecialistInfo | null> {
-  const contract = getRegistryContract();
-  if (!contract) throw new Error("Blockchain not initialized");
+  const allSpecialists = await getAllSpecialists();
+  
+  const availableProviders = allSpecialists
+    .filter(s => s.niche.toUpperCase() === niche.toUpperCase() && s.isActive && s.endpoint)
+    .map(s => ({
+      model: { id: s.modelId, name: s.name, niche: s.niche },
+      provider: { id: s.id, wallet: s.wallet, pricePerToken: ethers.parseUnits(s.pricePerQuery, 6), stakedAmount: ethers.parseUnits(s.stakedAmount, 6), slashCount: s.slashCount },
+      priceNum: parseFloat(s.pricePerQuery)
+    }));
 
-  const endpoints = await readJSON<any>(endpointsPath, {});
-
-  let availableProviders = [];
-
-  const modelCount = await contract.nextModelId();
-  for (let i = 0; i < Number(modelCount); i++) {
-    const modelId = i; // old deployed contract uses sequential IDs; no modelIds() array
-    const model = await contract.models(modelId);
-    if (!model.isActive || model.niche.toUpperCase() !== niche.toUpperCase()) continue;
-
-    const providers = await contract.getActiveProviders(modelId);
-    
-    for (const provider of providers) {
-      const idStr = provider.id.toString();
-      const priceNum = parseFloat(ethers.formatUnits(provider.pricePerToken, 6));
-      
-      if (endpoints[idStr]) {
-        if (maxFee !== undefined && priceNum > maxFee) {
-          continue;
-        }
-        availableProviders.push({ model, provider, priceNum });
-      }
-    }
+  if (maxFee !== undefined) {
+    const withinBudget = availableProviders.filter(p => p.priceNum <= maxFee);
+    if (withinBudget.length === 0) return null;
+    availableProviders.splice(0, availableProviders.length, ...withinBudget);
   }
 
   if (availableProviders.length === 0) return null;
 
-  // Find the top 3 highest-staked providers
   availableProviders.sort((a, b) => {
-    const stakeA = a.provider.stakedAmount;
-    const stakeB = b.provider.stakedAmount;
+    const stakeA = BigInt(a.provider.stakedAmount.toString());
+    const stakeB = BigInt(b.provider.stakedAmount.toString());
     if (stakeA > stakeB) return -1;
     if (stakeA < stakeB) return 1;
-    // Tie break on price
     if (a.priceNum < b.priceNum) return -1;
     if (a.priceNum > b.priceNum) return 1;
     return 0;
   });
 
   const top3 = availableProviders.slice(0, 3);
-  
-  // Calculate Median Price of top 3
   const prices = top3.map(p => p.priceNum).sort((a, b) => a - b);
   const medianPriceNum = prices[Math.floor(prices.length / 2)];
-  
-  // Find a provider from top 3 that matches or is below median price
   const best = top3.find(p => p.priceNum <= medianPriceNum) || top3[0];
-  
-  const idStr = best.provider.id.toString();
-  
+
+  const specDetail = allSpecialists.find(s => s.id === best.provider.id);
+
   return {
-    id: idStr,
-    modelId: best.model.id.toString(),
+    id: best.provider.id,
+    modelId: best.model.id,
     wallet: best.provider.wallet,
-    price: ethers.formatUnits(best.provider.pricePerToken, 6), // In production, we'd set maxBudget = medianPrice. But here price acts as maxBudget.
-    endpoint: endpoints[idStr],
+    price: best.priceNum.toString(),
+    endpoint: specDetail?.endpoint || "",
     modelName: best.model.name,
     stakedAmount: ethers.formatUnits(best.provider.stakedAmount, 6),
-    slashCount: Number(best.provider.slashCount)
+    slashCount: best.provider.slashCount
   };
 }
 
@@ -116,44 +104,56 @@ export interface SpecialistListItem {
 }
 
 export async function getAllSpecialists(healthStatus?: Record<string, boolean>): Promise<SpecialistListItem[]> {
-  const allRatings = await ratings.getAllRatings();
+  const now = Date.now();
+  if (!cachedSpecialistList || now - lastCacheUpdate > CACHE_TTL_MS) {
+    const allRatings = await ratings.getAllRatings();
+    const contract = getRegistryContract();
+    if (!contract) throw new Error("Blockchain not initialized");
 
-  const contract = getRegistryContract();
-  if (!contract) throw new Error("Blockchain not initialized");
+    const allSpecialists = [];
+    const endpoints = await readJSON<any>(endpointsPath, {});
 
-  const allSpecialists = [];
-  const endpoints = await readJSON<any>(endpointsPath, {});
+    const modelCount = await contract.nextModelId();
+    for (let i = 0; i < Number(modelCount); i++) {
+      try {
+        const modelId = await contract.modelIds(i);
+        const model = await contract.models(modelId);
+        if (!model.isActive) continue;
 
-  const modelCount = await contract.nextModelId();
-  for (let i = 0; i < Number(modelCount); i++) {
-    const modelId = i; // old deployed contract uses sequential IDs; no modelIds() array
-    const model = await contract.models(modelId);
-    if (!model.isActive) continue;
-
-    const providers = await contract.getActiveProviders(modelId);
-    for (const provider of providers) {
-      const idStr = provider.id.toString();
-      const hasEndpoint = !!endpoints[idStr];
-      
-      allSpecialists.push({
-        id: idStr,
-        modelId: model.id.toString(),
-        name: model.name, // Display model name
-        niche: model.niche,
-        pricePerQuery: ethers.formatUnits(provider.pricePerToken, 6),
-        wallet: provider.wallet,
-        isActive: provider.isActive,
-        endpoint: endpoints[idStr] || null,
-        isOnline: healthStatus ? (hasEndpoint && !!healthStatus[idStr]) : false,
-        averageScore: allRatings[idStr]?.averageScore || null,
-        totalRatings: allRatings[idStr]?.totalRatings || 0,
-        stakedAmount: ethers.formatUnits(provider.stakedAmount, 6),
-        slashCount: Number(provider.slashCount)
-      });
+        const providers = await contract.getActiveProviders(modelId);
+        for (const provider of providers) {
+          const idStr = provider.id.toString();
+          
+          allSpecialists.push({
+            id: idStr,
+            modelId: model.id.toString(),
+            name: model.name,
+            niche: model.niche,
+            pricePerQuery: ethers.formatUnits(provider.pricePerToken, 6),
+            wallet: provider.wallet,
+            isActive: provider.isActive,
+            endpoint: endpoints[idStr] || null,
+            averageScore: allRatings[idStr]?.averageScore || null,
+            totalRatings: allRatings[idStr]?.totalRatings || 0,
+            stakedAmount: ethers.formatUnits(provider.stakedAmount, 6),
+            slashCount: Number(provider.slashCount)
+          });
+        }
+      } catch (loopErr: any) {
+        logger.error(`Error querying model info at index ${i} on-chain:`, loopErr);
+      }
     }
+    cachedSpecialistList = allSpecialists;
+    lastCacheUpdate = now;
   }
-  
-  return allSpecialists;
+
+  return cachedSpecialistList.map(spec => {
+    const hasEndpoint = !!spec.endpoint;
+    return {
+      ...spec,
+      isOnline: healthStatus ? (hasEndpoint && !!healthStatus[spec.id]) : false
+    };
+  });
 }
 
 export async function storeEndpoint(providerId: string, endpointUrl: string) {

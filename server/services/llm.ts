@@ -6,6 +6,15 @@ export const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY || "dummy_key_for_tests",
 });
 
+export function sanitizePrompt(text: string): string {
+  if (!text) return text;
+  return text
+    .replace(/<function\b[^>]*>/gi, "[blocked function tag]")
+    .replace(/<\/function>/gi, "[blocked function end tag]")
+    .replace(/\[\s*(system|assistant|user|tool result|assistant response)\s*\]/gi, "[blocked block tag]")
+    .replace(/\bignore\s+all\s+(previous|prior)\s+instructions\b/gi, "[blocked override command]");
+}
+
 export interface IntentResult {
   delegate: boolean;
   chain?: { niche: string; sub_prompt: string }[];
@@ -19,6 +28,7 @@ export interface IntentResult {
  * Uses OpenAI function calling to determine if delegation is required.
  */
 export async function detectIntent(prompt: string): Promise<IntentResult> {
+  const sanitizedPrompt = sanitizePrompt(prompt);
   const specialists = await registry.getAllSpecialists();
   const activeNiches = Array.from(new Set(specialists.map(s => s.niche)));
   const nicheString = activeNiches.length > 0 ? activeNiches.join(", ") : "None";
@@ -40,7 +50,7 @@ For example:
 
 Do NOT try to solve domain-specific tasks natively. Only answer directly if the request is a simple greeting, general conversation, or explicitly falls completely outside the available niches.`,
     },
-    { role: "user", content: prompt },
+    { role: "user", content: sanitizedPrompt },
   ];
 
   const tools: any[] = [
@@ -69,7 +79,7 @@ Do NOT try to solve domain-specific tasks natively. Only answer directly if the 
 
   // If there are no niches available, don't even provide the tool to the LLM to save tokens and prevent hallucinations
   const callOptions: any = {
-    model: "llama-3.1-8b-instant",
+    model: "llama-3.3-70b-versatile",
     messages,
   };
 
@@ -410,7 +420,7 @@ You must analyze the specialist's output and determine if it represents a valid,
 Reply STRICTLY with 'YES' if it passes, or 'NO' if it fails. Do not output any other text or explanations.`;
 
   const response = await groqCallWithRetry(() => groq.chat.completions.create({
-    model: "llama-3.3-70b-versatile",
+    model: "mixtral-8x7b-32768",
     messages: [
       { role: "system", content: systemContent },
       { role: "user", content: result },

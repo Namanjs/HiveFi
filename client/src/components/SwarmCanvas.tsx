@@ -383,7 +383,7 @@ export default function SwarmCanvas({ executionStep, activeSpecialists, currentE
 
         <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
           {onToggleEnlarge && (
-            <button onClick={onToggleEnlarge} className="p-1.5 hover:bg-white/10 rounded-lg text-white/50 hover:text-white transition-colors" data-tooltip-bottom={isEnlarged ? "Restore" : "Enlarge panel"}>
+            <button onClick={onToggleEnlarge} className="p-1.5 hover:bg-white/10 rounded-lg text-white/50 hover:text-white transition-colors" data-tooltip-bottom-right={isEnlarged ? "Restore" : "Enlarge panel"}>
               {isEnlarged ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
             </button>
           )}

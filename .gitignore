@@ -34,3 +34,9 @@ server/config/task-history.json
 # Logs
 *.log
 npm-debug.log*
+
+# Temporary workspace plan files
+IMPLEMENTATION_PLAN.md
+implementation_plan.md
+task.md
+walkthrough.md

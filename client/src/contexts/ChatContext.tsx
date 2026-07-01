@@ -57,6 +57,10 @@ interface ChatContextType {
   activeFilePath: string | null;
   activeTab: "network" | "workspace" | "preview";
   rightPanelWidth: number;
+  pendingToolApproval: { id: string; tool: string; params: any } | null;
+  setPendingToolApproval: React.Dispatch<React.SetStateAction<{ id: string; tool: string; params: any } | null>>;
+  autoApproveMedium: boolean;
+  setAutoApproveMedium: React.Dispatch<React.SetStateAction<boolean>>;
   setWorkspaceFiles: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   setActiveFilePath: React.Dispatch<React.SetStateAction<string | null>>;
   setActiveTab: React.Dispatch<React.SetStateAction<"network" | "workspace" | "preview">>;
@@ -94,12 +98,38 @@ export function ChatProvider({ children }: { children: ReactNode }) {
   const [workspaceFiles, setWorkspaceFiles] = useState<Record<string, string>>({});
   const [activeFilePath, setActiveFilePath] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"network" | "workspace" | "preview">("network");
-  const [rightPanelWidth, setRightPanelWidth] = useState<number>(480);
+  const [rightPanelWidth, setRightPanelWidth] = useState<number>(() => {
+    if (typeof window !== "undefined") {
+      return Math.max(800, Math.floor(window.innerWidth * 0.5));
+    }
+    return 800;
+  });
   const [selectedModels, setSelectedModels] = useState<Record<string, string>>({});
+
+  const [pendingToolApproval, setPendingToolApproval] = useState<{ id: string; tool: string; params: any } | null>(null);
+  const [autoApproveMedium, setAutoApproveMedium] = useState<boolean>(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
+    fetch(`${API_BASE}/api/files`, {
+      headers: {
+        "x-api-key": import.meta.env.VITE_API_KEY || ""
+      }
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.files) {
+          setWorkspaceFiles(data.files);
+          const paths = Object.keys(data.files);
+          if (paths.length > 0) {
+            const preferred = paths.find(p => p.endsWith("Opencode.md") || p.endsWith("package.json") || p.endsWith("index.ts"));
+            setActiveFilePath(preferred || paths[0]);
+          }
+        }
+      })
+      .catch(err => console.error("Error loading workspace files:", err));
+
     fetch(`${API_BASE}/api/registry`)
       .then((res) => res.json())
       .then((data) => {
@@ -141,6 +171,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       reconnectionAttempts: Infinity,
+      query: {
+        apiKey: import.meta.env.VITE_API_KEY || ""
+      }
     });
 
     socketInstance.on("connect", () => {
@@ -280,6 +313,28 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       setActiveFilePath(prev => prev === payload.path ? null : prev);
     });
 
+    socket.on("FILE_RENAME", (payload: { oldPath: string; newPath: string }) => {
+      setWorkspaceFiles(prev => {
+        const next = { ...prev };
+        if (next[payload.oldPath] !== undefined) {
+          next[payload.newPath] = next[payload.oldPath];
+          delete next[payload.oldPath];
+        }
+        return next;
+      });
+      setActiveFilePath(prev => prev === payload.oldPath ? payload.newPath : prev);
+    });
+
+    socket.on("TOOL_APPROVAL_REQUEST", (payload: { id: string; tool: string; params: any }) => {
+      const isMedium = payload.tool === "write_file" || payload.tool === "install_packages";
+      // Auto-approve if remember-decision was checked for medium risk tools in this session
+      if (isMedium && autoApproveMedium) {
+        socket.emit("TOOL_APPROVAL_RESPONSE", { id: payload.id, approved: true });
+        return;
+      }
+      setPendingToolApproval(payload);
+    });
+
     socket.on("CODE_GEN_COMPLETE", (payload: { files: Record<string, string>; fileTree: any[]; metadata: any }) => {
       setWorkspaceFiles(payload.files);
       const paths = Object.keys(payload.files);
@@ -299,37 +354,50 @@ export function ChatProvider({ children }: { children: ReactNode }) {
       socket.off("STATUS_UPDATE");
       socket.off("FILE_UPDATE");
       socket.off("FILE_DELETE");
+      socket.off("FILE_RENAME");
+      socket.off("TOOL_APPROVAL_REQUEST");
       socket.off("CODE_GEN_COMPLETE");
     };
   }, [socket]);
 
   const handleNewFile = (path: string) => {
-    setWorkspaceFiles(prev => {
-      if (prev[path]) return prev;
-      return { ...prev, [path]: '' };
-    });
-    setActiveFilePath(path);
+    fetch(`${API_BASE}/api/files/write`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": import.meta.env.VITE_API_KEY || ""
+      },
+      body: JSON.stringify({ filePath: path, content: "" })
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          setActiveFilePath(path);
+        }
+      })
+      .catch(err => console.error("Error creating file:", err));
   };
 
   const handleDeleteFile = (path: string) => {
-    setWorkspaceFiles(prev => {
-      const next = { ...prev };
-      delete next[path];
-      return next;
-    });
-    setActiveFilePath(prev => prev === path ? null : prev);
+    fetch(`${API_BASE}/api/files/delete`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": import.meta.env.VITE_API_KEY || ""
+      },
+      body: JSON.stringify({ filePath: path })
+    }).catch(err => console.error("Error deleting file:", err));
   };
 
   const handleRenameFile = (oldPath: string, newPath: string) => {
-    setWorkspaceFiles(prev => {
-      const next = { ...prev };
-      if (next[oldPath] !== undefined) {
-        next[newPath] = next[oldPath];
-        delete next[oldPath];
-      }
-      return next;
-    });
-    setActiveFilePath(newPath);
+    fetch(`${API_BASE}/api/files/rename`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": import.meta.env.VITE_API_KEY || ""
+      },
+      body: JSON.stringify({ oldPath, newPath })
+    }).catch(err => console.error("Error renaming file:", err));
   };
 
   function buildCompletionMessage(payload: any): string {
@@ -361,6 +429,9 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
+    }
+    if (socket) {
+      socket.emit("CANCEL_EXECUTION");
     }
     setIsLoading(false);
     setExecutionStep("ERROR");
@@ -495,6 +566,10 @@ export function ChatProvider({ children }: { children: ReactNode }) {
     currentExecutingNiche,
     isLoading,
     completedTask,
+    pendingToolApproval,
+    setPendingToolApproval,
+    autoApproveMedium,
+    setAutoApproveMedium,
     showAbstraction,
     activePanel,
     pendingIntent,

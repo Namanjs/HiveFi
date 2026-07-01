@@ -13,11 +13,12 @@ async function main() {
   console.log(`Total models registered: ${nextModelId}`);
 
   for (let m = 0; m < Number(nextModelId); m++) {
-    const model = await contract.models(m);
-    console.log(`\nModel ${m}: ${model.name} [${model.niche}]`);
+    const modelId = await contract.modelIds(m);
+    const model = await contract.models(modelId);
+    console.log(`\nModel ${m} (ID: ${modelId}): ${model.name} [${model.niche}]`);
     console.log(`  Active: ${model.isActive}`);
 
-    const providers = await contract.getActiveProviders(m);
+    const providers = await contract.getActiveProviders(modelId);
     console.log(`  Active Providers: ${providers.length}`);
     for (const p of providers) {
       console.log(`    Provider ${p.id}: wallet=${p.wallet}, price=${ethers.formatUnits(p.pricePerToken, 6)} USDC/token, stake=${ethers.formatUnits(p.stakedAmount, 6)} USDC, slashes=${p.slashCount}`);

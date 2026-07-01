@@ -177,7 +177,7 @@ export default function Transactions() {
                       <td className="px-6 py-4 text-left">
                         {tx.txHash ? (
                           <div className="flex justify-start">
-                            <a href={`https://sepolia.etherscan.io/tx/${tx.txHash}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm font-mono text-[#a1a1aa] hover:text-white transition-colors">
+                            <a href={`${import.meta.env.VITE_ETHERSCAN_BASE || "https://sepolia.etherscan.io"}/tx/${tx.txHash}`} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 text-sm font-mono text-[#a1a1aa] hover:text-white transition-colors">
                               {tx.txHash.substring(0, 6)}...{tx.txHash.substring(tx.txHash.length - 4)}
                               <ExternalLink size={14} />
                             </a>

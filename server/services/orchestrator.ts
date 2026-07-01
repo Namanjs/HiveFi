@@ -5,14 +5,33 @@ import * as registry from "./registry";
 import type { SpecialistInfo } from "./registry";
 import * as taskHistory from "./taskHistory";
 import { ethers } from "ethers";
-import { detectCodeGenIntent, isCodeGenerationPrompt } from "./llm";
+import { detectCodeGenIntent, isCodeGenerationPrompt, sanitizePrompt } from "./llm";
 import { orchestrateCodeGen } from "./codegenOrchestrator";
+import * as fs from "fs";
+import * as path from "path";
+import { logger } from "./logger";
+import { injectToolsContext, parseToolCall, executeToolCall } from "./toolExecutor";
+import { parseFileOperations, validateOperations, normalizePathForNiche } from "./fileParser";
 
 export interface OrchestrationResult {
   delegate: boolean;
   niche?: string;
   result?: string;
   text: string;
+}
+
+const activeCancellations = new Set<string>();
+
+export function registerCancellation(socketId: string) {
+  activeCancellations.add(socketId);
+}
+
+export function clearCancellation(socketId: string) {
+  activeCancellations.delete(socketId);
+}
+
+export function isCancelled(socketId: string): boolean {
+  return activeCancellations.has(socketId);
 }
 
 async function orchestrateChain(
@@ -26,6 +45,11 @@ async function orchestrateChain(
   let previousOutput = "";
 
   for (let i = 0; i < chain.length; i++) {
+    if (isCancelled(socket.id)) {
+      logger.info(`Chain execution cancelled at step ${i}`);
+      socket.emit("STATUS_UPDATE", { status: "ERROR", message: "Execution cancelled by user." });
+      break;
+    }
     const step = chain[i];
     const niche = step.niche.toUpperCase();
     
@@ -64,9 +88,48 @@ async function orchestrateChain(
     const taskId = escrowReceipt.taskId;
     socket.emit("STATUS_UPDATE", { status: "ESCROW_LOCKED", taskId, txHash: escrowReceipt.txHash, amount: escrowAmount, niche });
 
-    // Execute
-    socket.emit("STATUS_UPDATE", { status: "EXECUTING_SPECIALIST", niche });
-    const specResponse = await llm.callSpecialistEndpoint(specialist.endpoint, step.sub_prompt, niche, previousOutput || undefined, taskId.toString(), specialist.id, maxFee);
+    // Execute with tool-calling loop
+    let currentPrompt = injectToolsContext(step.sub_prompt, niche);
+    let specResponse;
+    let loopCount = 0;
+    const maxToolCalls = 10;
+    const projectRoot = path.resolve(__dirname, "..", "..");
+
+    while (true) {
+      if (isCancelled(socket.id)) {
+        logger.info("Chained execution tool loop cancelled");
+        break;
+      }
+      socket.emit("STATUS_UPDATE", { status: "EXECUTING_SPECIALIST", niche });
+      specResponse = await llm.callSpecialistEndpoint(
+        specialist.endpoint, 
+        currentPrompt, 
+        niche, 
+        previousOutput || undefined, 
+        taskId.toString(), 
+        specialist.id, 
+        maxFee
+      );
+
+      const toolCall = parseToolCall(specResponse.result);
+      if (!toolCall || loopCount >= maxToolCalls || isCancelled(socket.id)) {
+        break;
+      }
+
+      loopCount++;
+      socket.emit("STATUS_UPDATE", { 
+        status: "EXECUTING_TOOL", 
+        niche, 
+        tool: toolCall.tool,
+        params: toolCall.params
+      });
+
+      const toolResult = await executeToolCall(toolCall.tool, toolCall.params, projectRoot, socket);
+
+      // Append turn to prompt accumulator
+      currentPrompt += `\n\n[ASSISTANT RESPONSE]\n${specResponse.result}`;
+      currentPrompt += `\n\n[TOOL RESULT]\nTool: ${toolCall.tool}\nOutput:\n${toolResult}\n\nPlease proceed with the task.`;
+    }
 
     // Evaluate
     socket.emit("STATUS_UPDATE", { status: "EVALUATING_RESULT", niche });
@@ -183,11 +246,12 @@ export async function orchestrate(
   nicheModels?: Record<string, string>
 ): Promise<OrchestrationResult> {
 
+  const sanitized = sanitizePrompt(prompt);
   socket.emit("STATUS_UPDATE", { status: "ANALYZING_INTENT" });
 
-  if (!preAnalyzedIntent && isCodeGenerationPrompt(prompt)) {
+  if (!preAnalyzedIntent && isCodeGenerationPrompt(sanitized)) {
     socket.emit("STATUS_UPDATE", { status: "ANALYZING_INTENT", message: "Detecting code generation requirements..." });
-    const codeGenPlan = await detectCodeGenIntent(prompt);
+    const codeGenPlan = await detectCodeGenIntent(sanitized);
     if (codeGenPlan) {
       return await orchestrateCodeGen(codeGenPlan, socket, maxFee, clientWallet);
     }
@@ -204,11 +268,11 @@ export async function orchestrate(
         delegate: true,
         niche: "MANUAL_OVERRIDE",
         targetModelId: manualModelId,
-        sub_prompt: prompt
+        sub_prompt: sanitized
       };
     } else {
       socket.emit("STATUS_UPDATE", { status: "ANALYZING_INTENT", message: delegationMode === "hired" ? "Hiring Orchestrator on-chain..." : "Analyzing intent..." });
-      intent = await analyzeIntent(prompt, delegationMode, maxFee, clientWallet, customEndpoint);
+      intent = await analyzeIntent(sanitized, delegationMode, maxFee, clientWallet, customEndpoint);
     }
   }
 
@@ -284,9 +348,48 @@ export async function orchestrate(
     niche
   });
 
-  socket.emit("STATUS_UPDATE", { status: "EXECUTING_SPECIALIST", niche });
+  // Execute with tool-calling loop
+  let currentPrompt = injectToolsContext(intent.sub_prompt, niche);
+  let specResponse;
+  let loopCount = 0;
+  const maxToolCalls = 10;
+  const projectRoot = path.resolve(__dirname, "..", "..");
 
-  const specResponse = await llm.callSpecialistEndpoint(specialist.endpoint, intent.sub_prompt, niche, undefined, taskId.toString(), specialist.id, maxFee);
+  while (true) {
+    if (isCancelled(socket.id)) {
+      logger.info("Single-task execution cancelled");
+      break;
+    }
+    socket.emit("STATUS_UPDATE", { status: "EXECUTING_SPECIALIST", niche });
+    specResponse = await llm.callSpecialistEndpoint(
+      specialist.endpoint, 
+      currentPrompt, 
+      niche, 
+      undefined, 
+      taskId.toString(), 
+      specialist.id, 
+      maxFee
+    );
+
+    const toolCall = parseToolCall(specResponse.result);
+    if (!toolCall || loopCount >= maxToolCalls || isCancelled(socket.id)) {
+      break;
+    }
+
+    loopCount++;
+    socket.emit("STATUS_UPDATE", { 
+      status: "EXECUTING_TOOL", 
+      niche, 
+      tool: toolCall.tool,
+      params: toolCall.params
+    });
+
+    const toolResult = await executeToolCall(toolCall.tool, toolCall.params, projectRoot, socket);
+
+    // Append turn to prompt accumulator
+    currentPrompt += `\n\n[ASSISTANT RESPONSE]\n${specResponse.result}`;
+    currentPrompt += `\n\n[TOOL RESULT]\nTool: ${toolCall.tool}\nOutput:\n${toolResult}\n\nPlease proceed with the task.`;
+  }
 
   socket.emit("STATUS_UPDATE", { status: "EVALUATING_RESULT" });
 
@@ -329,12 +432,14 @@ export async function orchestrate(
       finalText = `Here is the analysis from ${specialist.modelName}:\n\n${resultText}\n\nI verified the ${niche} syntax and approved the payment on-chain using the cryptographically verified receipt!`;
     }
 
-    return {
+    const result = {
       delegate: true,
       niche,
       result: specResponse.result,
       text: finalText,
     };
+    clearCancellation(socket.id);
+    return result;
   } else {
     socket.emit("STATUS_UPDATE", { status: "SETTLEMENT_TX_PENDING" });
 
@@ -357,6 +462,7 @@ export async function orchestrate(
       txHash: refundReceipt.txHash
     });
 
+    clearCancellation(socket.id);
     throw new Error(
       `Specialist output failed quality checks. Evaluator returned: NO. Transaction rejected, 3-way penalty applied.`
     );

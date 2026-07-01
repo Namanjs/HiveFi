@@ -1,4 +1,8 @@
 import type { FileOperation } from "./projectState";
+import * as fs from "fs";
+import * as path from "path";
+import { exec } from "child_process";
+import { logger } from "./logger";
 
 export function parseFileOperations(text: string): FileOperation[] {
   const operations: FileOperation[] = [];
@@ -30,7 +34,8 @@ export function parseFileOperations(text: string): FileOperation[] {
         }
       }
     }
-  } catch {
+  } catch (err: any) {
+    logger.debug(`parseFileOperations: text is not JSON formatted: ${err.message}`);
   }
 
   const fileBlockRegex = /```file:([^\n]+)\n([\s\S]*?)```/g;
@@ -126,3 +131,30 @@ export function validateOperations(operations: FileOperation[]): {
 
   return { valid, invalid };
 }
+
+export function normalizePathForNiche(filePath: string, niche: string): string {
+  const clean = filePath.replace(/^\.\//, "").trim();
+
+  // If it already starts with a valid monorepo root folder, keep it!
+  if (
+    clean.startsWith("server/") ||
+    clean.startsWith("client/") ||
+    clean.startsWith("contracts/") ||
+    clean.startsWith("specialist-node/")
+  ) {
+    return clean;
+  }
+
+  // Otherwise, route based on niche!
+  const upperNiche = niche.toUpperCase();
+  if (upperNiche === "BACKEND" || upperNiche === "SQL") {
+    return `server/${clean}`;
+  }
+  if (upperNiche === "FRONTEND") {
+    return `client/${clean}`;
+  }
+
+  return clean;
+}
+
+

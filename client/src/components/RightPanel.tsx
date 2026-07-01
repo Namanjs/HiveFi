@@ -65,7 +65,7 @@ export default function RightPanel(props: RightPanelProps) {
   const panelWidth = activeTab === "network" ? 480 : rightPanelWidth;
 
   return (
-    <div className="flex h-full min-h-0" style={{ width: panelWidth }}>
+    <div className="flex h-full min-h-0 min-w-0 overflow-x-hidden w-full" style={{ maxWidth: panelWidth, width: panelWidth }}>
       <div
         ref={dragRef}
         onMouseDown={handleMouseDown}
@@ -103,7 +103,7 @@ export default function RightPanel(props: RightPanelProps) {
 
         <div className="flex-1 min-h-0 overflow-hidden">
           {activeTab === "network" && (
-            <div className="flex flex-col h-full min-h-0">
+            <div className="flex flex-col h-full min-h-0 gap-4 pt-4">
               <div className={`transition-all duration-500 smooth-spring min-h-0 overflow-hidden ${
                 activePanel === "log" ? "h-[60px] shrink-0" : "flex-1"
               }`}>

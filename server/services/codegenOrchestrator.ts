@@ -4,10 +4,15 @@ import * as blockchain from "./blockchain";
 import * as registry from "./registry";
 import * as taskHistory from "./taskHistory";
 import { ethers } from "ethers";
+import { logger } from "./logger";
+import { isCancelled, clearCancellation } from "./orchestrator";
 import type { SpecialistInfo } from "./registry";
 import type { ProjectState, CodeGenPlan, FileOperation, ReviewResult } from "./projectState";
 import { MAX_CODE_GEN_ITERATIONS, CODE_GEN_TOKEN_LIMIT } from "./projectState";
-import { parseFileOperations, applyOperations, validateOperations } from "./fileParser";
+import { parseFileOperations, applyOperations, validateOperations, normalizePathForNiche } from "./fileParser";
+import { injectToolsContext, parseToolCall, executeToolCall } from "./toolExecutor";
+import * as fs from "fs";
+import * as path from "path";
 import { buildContext } from "./contextPacker";
 import type { OrchestrationResult } from "./orchestrator";
 import { reviewProject } from "./codeReviewer";
@@ -37,9 +42,9 @@ export async function orchestrateCodeGen(
   const allStepOutputs: string[] = [];
   let finalReviewFeedback: string | undefined;
   const originalPrompts = new Map(plan.plan.map(s => [s.step, s.prompt]));
-  const sessionEscrowTaskId: string | undefined = undefined;
 
-  for (let iteration = 0; iteration < MAX_CODE_GEN_ITERATIONS; iteration++) {
+  try {
+    for (let iteration = 0; iteration < MAX_CODE_GEN_ITERATIONS; iteration++) {
     projectState.metadata.currentIteration = iteration;
     socket.emit("STATUS_UPDATE", {
       status: "CODE_GEN_ITERATION",
@@ -90,19 +95,74 @@ export async function orchestrateCodeGen(
         reviewFeedback: finalReviewFeedback,
       });
 
+      if (isCancelled(socket.id)) {
+        logger.info(`Code-Gen aborted at step ${step.step} due to cancellation`);
+        socket.emit("STATUS_UPDATE", { status: "ERROR", message: "Execution cancelled by user." });
+        break;
+      }
+
+      step.prompt = llm.sanitizePrompt(step.prompt);
+
+      let taskId = "";
+      if (clientWallet) {
+        socket.emit("STATUS_UPDATE", { status: "ESCROW_TX_PENDING", niche, price: specialist.price, modelName: specialist.modelName });
+        const escrowAmount = maxFee !== undefined ? maxFee.toString() : "1.0";
+        try {
+          const escrowReceipt = await blockchain.requestTaskOnChain(clientWallet, specialist.id, escrowAmount, step.prompt, 0);
+          taskId = escrowReceipt.taskId;
+          socket.emit("STATUS_UPDATE", { status: "ESCROW_LOCKED", taskId, txHash: escrowReceipt.txHash, amount: escrowAmount, niche });
+        } catch (escrowErr: any) {
+          logger.error("Failed to request task on chain:", escrowErr);
+          socket.emit("STATUS_UPDATE", { status: "CODE_GEN_EXECUTION_FAILED", niche, error: `Escrow lock failed: ${escrowErr.message}` });
+          throw escrowErr;
+        }
+      }
+
       const fullPrompt = buildSpecialistPrompt(step, context);
 
-      socket.emit("STATUS_UPDATE", { status: "CODE_GEN_EXECUTING", niche, step: step.step });
+      let currentPrompt = injectToolsContext(fullPrompt, niche);
       let specResponse;
+      let loopCount = 0;
+      const maxToolCalls = 10;
+      const projectRoot = path.resolve(__dirname, "..", "..");
+
       try {
-        await rateLimitedDelay();
-        specResponse = await llm.callSpecialistEndpoint(
-          specialist.endpoint, fullPrompt, niche,
-          JSON.stringify(context),
-          undefined,
-          specialist.id,
-          maxFee
-        );
+        while (true) {
+          if (isCancelled(socket.id)) {
+            logger.info("Code-Gen tool loop cancelled");
+            break;
+          }
+          socket.emit("STATUS_UPDATE", { status: "CODE_GEN_EXECUTING", niche, step: step.step });
+          await rateLimitedDelay();
+          specResponse = await llm.callSpecialistEndpoint(
+            specialist.endpoint, 
+            currentPrompt, 
+            niche,
+            JSON.stringify(context),
+            taskId.toString(),
+            specialist.id,
+            maxFee
+          );
+
+          const toolCall = parseToolCall(specResponse.result);
+          if (!toolCall || loopCount >= maxToolCalls || isCancelled(socket.id)) {
+            break;
+          }
+
+          loopCount++;
+          socket.emit("STATUS_UPDATE", { 
+            status: "EXECUTING_TOOL", 
+            niche, 
+            tool: toolCall.tool,
+            params: toolCall.params
+          });
+
+          const toolResult = await executeToolCall(toolCall.tool, toolCall.params, projectRoot, socket);
+
+          // Append turn to prompt accumulator
+          currentPrompt += `\n\n[ASSISTANT RESPONSE]\n${specResponse.result}`;
+          currentPrompt += `\n\n[TOOL RESULT]\nTool: ${toolCall.tool}\nOutput:\n${toolResult}\n\nPlease proceed with the task.`;
+        }
       } catch (err: any) {
         socket.emit("STATUS_UPDATE", { status: "CODE_GEN_EXECUTION_FAILED", niche, error: err.message });
         if (stepIndex > 0) continue;
@@ -136,6 +196,12 @@ export async function orchestrateCodeGen(
         });
       }
 
+      // Normalize paths in valid operations
+      valid = valid.map(op => ({
+        ...op,
+        path: normalizePathForNiche(op.path, niche)
+      }));
+
       projectState.files = applyOperations(projectState, valid).files;
 
       const stepCost = parseFloat(ethers.formatUnits(specResponse.final_amount_base, 6));
@@ -143,11 +209,43 @@ export async function orchestrateCodeGen(
       projectState.metadata.totalCost = totalCost;
 
       for (const op of valid) {
+        const fullPath = path.resolve(projectRoot, op.path);
         if (op.type === "write" && op.content !== undefined) {
+          fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+          fs.writeFileSync(fullPath, op.content, "utf8");
+          
           socket.emit("FILE_UPDATE", { path: op.path, content: op.content });
         }
         if (op.type === "delete") {
+          if (fs.existsSync(fullPath)) {
+            fs.unlinkSync(fullPath);
+          }
           socket.emit("FILE_DELETE", { path: op.path });
+        }
+      }
+
+      if (clientWallet && taskId) {
+        socket.emit("STATUS_UPDATE", { status: "SETTLEMENT_TX_PENDING", niche });
+        try {
+          const settleReceipt = await blockchain.settleTaskOnChain(taskId, specResponse.final_amount_base, specResponse.result_hash, specResponse.signature);
+          socket.emit("STATUS_UPDATE", { status: "FUNDS_RELEASED", taskId, txHash: settleReceipt.txHash, amount: ethers.formatUnits(specResponse.final_amount_base, 6), niche });
+          
+          await taskHistory.appendTask({
+            taskId,
+            modelId: specialist.id,
+            specialistWallet: specialist.wallet,
+            clientWallet,
+            niche,
+            amount: specResponse.final_amount_base,
+            status: 'approved',
+            timestamp: Date.now(),
+            prompt: step.prompt,
+            txHash: settleReceipt.txHash,
+          });
+        } catch (settleErr: any) {
+          logger.error("Failed to settle code-gen task on chain:", settleErr);
+          socket.emit("STATUS_UPDATE", { status: "CODE_GEN_EXECUTION_FAILED", niche, error: `On-chain settlement failed: ${settleErr.message}` });
+          throw settleErr;
         }
       }
 
@@ -210,14 +308,17 @@ export async function orchestrateCodeGen(
     `- ${fileCount} file${fileCount !== 1 ? 's' : ''} created\n` +
     `- Specialists: ${specialistsUsed}\n` +
     `- Iterations: ${projectState.metadata.currentIteration + 1}\n` +
-    costLine +
-    `\nSwitch to the **Workspace** tab to view and edit the code, or **Preview** to see it running.`;
+      costLine +
+      `\nSwitch to the **Workspace** tab to view and edit the code, or **Preview** to see it running.`;
 
-  return {
-    delegate: true,
-    niche: specialistsUsed,
-    text: responseText,
-  };
+    return {
+      delegate: true,
+      niche: specialistsUsed,
+      text: responseText,
+    };
+  } finally {
+    clearCancellation(socket.id);
+  }
 }
 
 function buildSpecialistPrompt(

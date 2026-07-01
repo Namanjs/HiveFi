@@ -60,7 +60,7 @@ export default function LogFeed({ events, mode = "normal", onToggleEnlarge }: Lo
               type="button"
               onClick={onToggleEnlarge} 
               className="p-1.5 hover:bg-white/10 rounded-lg text-white/50 hover:text-white transition-colors"
-              title={isEnlarged ? "Restore" : "Enlarge panel"}
+              data-tooltip-bottom-right={isEnlarged ? "Restore" : "Enlarge panel"}
               aria-label={isEnlarged ? "Restore event log panel" : "Enlarge event log panel"}
             >
               {isEnlarged ? <Minimize2 size={14} /> : <Maximize2 size={14} />}

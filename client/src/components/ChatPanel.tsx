@@ -99,7 +99,7 @@ const CodeBlockRenderer = ({ node, className, children, ...props }: any) => {
       )}
     </div>
   ) : (
-    <code className="bg-(--color-accent)/15 text-(--color-accent) px-1.5 py-0.5 rounded-md font-mono text-[13px] border border-(--color-accent)/20 wrap-break-word" {...props}>
+    <code className="bg-(--color-accent)/15 text-(--color-accent) px-1.5 py-0.5 rounded-md font-mono text-[13px] border border-(--color-accent)/20 break-words" {...props}>
       {children}
     </code>
   );
@@ -124,7 +124,7 @@ const MessageCopyButton = ({ text }: { text: string }) => {
 
 const MarkdownComponents = {
   code: CodeBlockRenderer,
-  p: ({ children }: any) => <p className="mb-4 last:mb-0 leading-[1.75] text-white/90 whitespace-pre-wrap">{children}</p>,
+  p: ({ children }: any) => <p className="mb-4 last:mb-0 leading-[1.75] text-white/90 whitespace-pre-wrap break-words">{children}</p>,
   h1: ({ children }: any) => <h1 className="text-2xl font-bold mt-8 mb-4 text-white tracking-tight font-sans">{children}</h1>,
   h2: ({ children }: any) => <h2 className="text-xl font-semibold mt-8 mb-4 text-white tracking-tight font-sans">{children}</h2>,
   h3: ({ children }: any) => <h3 className="text-lg font-semibold mt-6 mb-3 text-white tracking-tight font-sans">{children}</h3>,
@@ -181,6 +181,9 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, ratingPr
     return parseFloat(localStorage.getItem("max_fee") || "2.00");
   });
   const [showScrollBottom, setShowScrollBottom] = useState(false);
+  const [manualModelId, setManualModelId] = useState<string>(() => {
+    return localStorage.getItem("manual_model_id") || "";
+  });
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -192,6 +195,11 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, ratingPr
       const stored = parseFloat(localStorage.getItem("max_fee") || "2.00");
       setMaxFee((prev) => {
         if (prev !== stored) return stored;
+        return prev;
+      });
+      const storedModel = localStorage.getItem("manual_model_id") || "";
+      setManualModelId((prev) => {
+        if (prev !== storedModel) return storedModel;
         return prev;
       });
     };
@@ -270,7 +278,7 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, ratingPr
         {messages.map((m, idx) => (
           <div key={idx} className={`flex w-full group/msg ${m.sender === "user" ? "justify-end" : "justify-start"}`}>
             {m.sender === "user" ? (
-              <div className="max-w-[85%] md:max-w-2xl lg:max-w-3xl bg-[#1e1e20] text-white border border-white/10 rounded-3xl rounded-br-sm px-5 py-3.5 text-[15px] leading-relaxed shadow-lg whitespace-pre-wrap">
+              <div className="max-w-[85%] md:max-w-2xl lg:max-w-3xl bg-[#1e1e20] text-white border border-white/10 rounded-3xl rounded-br-sm px-5 py-3.5 text-[15px] leading-relaxed shadow-lg whitespace-pre-wrap break-words">
                 {m.text}
               </div>
             ) : (
@@ -367,7 +375,7 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, ratingPr
         
         {messages.length === 0 && (
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-[150px] w-full px-4">
-            <h1 className="text-4xl md:text-5xl font-medium tracking-tight text-transparent bg-clip-text bg-linear-to-r from-white via-white/80 to-white/40 text-center pb-2 drop-shadow-sm">
+            <h1 className="text-4xl md:text-5xl font-medium tracking-tight text-transparent bg-clip-text bg-linear-to-r from-white via-white/80 to-white/40 text-center pb-2 drop-shadow-sm break-words">
               {welcomeMessage}
             </h1>
           </div>
@@ -378,11 +386,10 @@ export default function ChatPanel({ messages, onSendMessage, isLoading, ratingPr
           <div className="mb-3 px-4 flex items-center justify-end">
             <div className="relative group">
               <select
-                value={localStorage.getItem("manual_model_id") || ""}
+                value={manualModelId}
                 onChange={(e) => {
                   localStorage.setItem("manual_model_id", e.target.value);
-                  // force re-render Hack
-                  setInput(input + " "); setTimeout(() => setInput(input), 0);
+                  setManualModelId(e.target.value);
                 }}
                 className="bg-[#18181b] border border-white/10 rounded-lg pl-4 pr-10 py-2.5 text-sm text-white focus:outline-none focus:border-white/30 focus:ring-1 focus:ring-white/30 appearance-none cursor-pointer transition-all hover:border-white/30"
               >

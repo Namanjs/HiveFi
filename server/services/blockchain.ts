@@ -148,7 +148,9 @@ export async function requestTaskOnChain(
             taskId = parsed.args[0].toString();
             break;
           }
-        } catch {}
+        } catch (logErr: any) {
+          logger.warn(`Failed to parse receipt log: ${logErr.message}`);
+        }
       }
 
       if (!taskId) {
@@ -215,4 +217,15 @@ export function getAddresses(): Addresses {
     walletA: walletA ? walletA.address : "",
     walletB: walletB ? walletB.address : "",
   };
+}
+
+export async function getUSDCBalance(address: string): Promise<string> {
+  if (!initialized || !usdcContract) return "0.0";
+  try {
+    const bal = await usdcContract.balanceOf(address);
+    return ethers.formatUnits(bal, 6);
+  } catch (err) {
+    logger.error(`Error fetching USDC balance for ${address}:`, err);
+    return "0.0";
+  }
 }

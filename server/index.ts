@@ -3,26 +3,31 @@ import express, { Request, Response, NextFunction } from "express";
 import helmet from "helmet";
 import http from "http";
 import { Server, Socket } from "socket.io";
+import path from "path";
+import { spawn } from "child_process";
 import cors from "cors";
 import rateLimit from 'express-rate-limit';
 import * as dotenv from "dotenv";
+import fs from "fs";
+import { runCommandInSandbox } from "./services/sandbox";
+import { handleToolApprovalResponse } from "./services/toolExecutor";
 
 dotenv.config();
 
 import { ethers } from "ethers";
 import * as blockchain from "./services/blockchain";
-import { orchestrate, analyzeIntent } from "./services/orchestrator";
+import { orchestrate, analyzeIntent, registerCancellation } from "./services/orchestrator";
 import * as registry from "./services/registry";
 import * as ratings from "./services/ratings";
 import * as llm from "./services/llm";
 import * as taskHistory from "./services/taskHistory";
-import { requireApiKey } from "./services/auth";
+import { requireApiKey, isValidApiKey } from "./services/auth";
 import { parseHiveFiError } from "./services/errorParser";
 
 // Health Status state
 let healthStatus: Record<string, boolean> = {};
 export function getHealthStatus() {
-  return healthStatus;
+  return Object.freeze({ ...healthStatus });
 }
 
 // Background polling for health status
@@ -100,17 +105,226 @@ const io = new Server(server, {
   },
 });
 
+io.use(async (socket, next) => {
+  try {
+    const apiKey = socket.handshake.query.apiKey || socket.handshake.headers["x-api-key"];
+    if (typeof apiKey !== "string") {
+      logger.warn(`Unauthorized WebSocket connection attempt: missing API key.`);
+      return next(new Error("Unauthorized: Missing API Key"));
+    }
+    const valid = await isValidApiKey(apiKey);
+    if (!valid) {
+      logger.warn(`Unauthorized WebSocket connection attempt: invalid API key.`);
+      return next(new Error("Unauthorized: Invalid API Key"));
+    }
+    next();
+  } catch (err: any) {
+    logger.error("Error during WebSocket handshake auth:", err);
+    next(new Error("Internal Server Error during handshake auth"));
+  }
+});
+
 io.on("connection", (socket: Socket) => {
   logger.info(`Client connected: ${socket.id}`);
 
+  let activeRun: { kill: () => void } | null = null;
+
+  // Terminal command execution stream
+  socket.on("EXECUTE_COMMAND", (data: { command: string }) => {
+    const { command } = data;
+    logger.info(`Terminal executing command in sandbox: ${command}`);
+
+    if (activeRun) {
+      activeRun.kill();
+    }
+
+    // Spawn a bash process in the root monorepo directory (one level up from server/)
+    const rootPath = path.resolve(__dirname, "..");
+    const { process: proc, kill } = runCommandInSandbox(command, rootPath);
+    activeRun = { kill };
+
+    proc.stdout?.on("data", (chunk) => {
+      socket.emit("TERMINAL_OUTPUT", { text: chunk.toString() });
+    });
+
+    proc.stderr?.on("data", (chunk) => {
+      socket.emit("TERMINAL_OUTPUT", { text: chunk.toString(), isError: true });
+    });
+
+    proc.on("close", (code) => {
+      socket.emit("TERMINAL_EXIT", { code: code ?? 0 });
+      activeRun = null;
+    });
+
+    proc.on("error", (err) => {
+      socket.emit("TERMINAL_OUTPUT", { text: `Failed to start process: ${err.message}\n`, isError: true });
+      socket.emit("TERMINAL_EXIT", { code: 1 });
+      activeRun = null;
+    });
+
+    // Handle process termination if client cancels or disconnects
+    socket.on("disconnect", () => {
+      if (activeRun) {
+        activeRun.kill();
+      }
+    });
+  });
+
+  socket.on("CANCEL_EXECUTION", () => {
+    logger.info(`Cancellation requested by client: ${socket.id}`);
+    registerCancellation(socket.id);
+  });
+
+  socket.on("TOOL_APPROVAL_RESPONSE", (data: { id: string; approved: boolean }) => {
+    handleToolApprovalResponse(data.id, data.approved);
+  });
+
   socket.on("disconnect", () => {
     logger.info(`Client disconnected: ${socket.id}`);
+    registerCancellation(socket.id);
   });
 });
 
 // GET /api/health
 app.get("/api/health", (req: Request, res: Response) => {
   res.json({ status: "ok", uptime: process.uptime(), timestamp: Date.now() });
+});
+
+// Helper to recursively scan directory
+function scanDirectory(dir: string, baseDir: string): Record<string, string> {
+  let files: Record<string, string> = {};
+  if (!fs.existsSync(dir)) return files;
+  
+  const items = fs.readdirSync(dir);
+  for (const item of items) {
+    const fullPath = path.join(dir, item);
+    const stat = fs.statSync(fullPath);
+    const relPath = path.relative(baseDir, fullPath);
+    
+    // Ignore patterns
+    if (
+      item === "node_modules" ||
+      item === ".git" ||
+      item === "dist" ||
+      item === "build" ||
+      item === ".next" ||
+      item === "package-lock.json" ||
+      item === ".npm" ||
+      item === ".pnpm-store"
+    ) {
+      continue;
+    }
+    
+    if (stat.isDirectory()) {
+      Object.assign(files, scanDirectory(fullPath, baseDir));
+    } else if (stat.isFile()) {
+      const ext = path.extname(item).toLowerCase();
+      const binaryExtensions = [
+        ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico",
+        ".pdf", ".zip", ".tar", ".gz", ".rar", ".mp3", ".mp4",
+        ".woff", ".woff2", ".ttf", ".eot", ".wasm"
+      ];
+      if (binaryExtensions.includes(ext)) continue;
+      
+      try {
+        if (stat.size < 1000000) { // Limit to 1MB
+          const content = fs.readFileSync(fullPath, "utf8");
+          files[relPath] = content;
+        }
+      } catch (e: any) {
+        logger.warn(`Failed to read file ${fullPath} during scanDirectory: ${e.message}`);
+      }
+    }
+  }
+  return files;
+}
+
+// GET /api/files
+app.get("/api/files", requireApiKey, (req: Request, res: Response) => {
+  try {
+    const projectRoot = path.resolve(__dirname, "..");
+    const files = scanDirectory(projectRoot, projectRoot);
+    res.json({ success: true, files });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/files/write
+app.post("/api/files/write", requireApiKey, (req: Request, res: Response) => {
+  try {
+    const { filePath, content } = req.body;
+    if (!filePath) {
+      return res.status(400).json({ success: false, error: "filePath is required" });
+    }
+    const projectRoot = path.resolve(__dirname, "..");
+    const fullPath = path.resolve(projectRoot, filePath);
+    
+    // Safety check to keep files within the workspace root
+    if (!fullPath.startsWith(projectRoot)) {
+      return res.status(403).json({ success: false, error: "Access denied" });
+    }
+    
+    fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+    fs.writeFileSync(fullPath, content || "", "utf8");
+    
+    io.emit("FILE_UPDATE", { path: filePath, content });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/files/delete
+app.post("/api/files/delete", requireApiKey, (req: Request, res: Response) => {
+  try {
+    const { filePath } = req.body;
+    if (!filePath) {
+      return res.status(400).json({ success: false, error: "filePath is required" });
+    }
+    const projectRoot = path.resolve(__dirname, "..");
+    const fullPath = path.resolve(projectRoot, filePath);
+    
+    if (!fullPath.startsWith(projectRoot)) {
+      return res.status(403).json({ success: false, error: "Access denied" });
+    }
+    
+    if (fs.existsSync(fullPath)) {
+      fs.unlinkSync(fullPath);
+    }
+    
+    io.emit("FILE_DELETE", { path: filePath });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/files/rename
+app.post("/api/files/rename", requireApiKey, (req: Request, res: Response) => {
+  try {
+    const { oldPath, newPath } = req.body;
+    if (!oldPath || !newPath) {
+      return res.status(400).json({ success: false, error: "oldPath and newPath are required" });
+    }
+    const projectRoot = path.resolve(__dirname, "..");
+    const fullOldPath = path.resolve(projectRoot, oldPath);
+    const fullNewPath = path.resolve(projectRoot, newPath);
+    
+    if (!fullOldPath.startsWith(projectRoot) || !fullNewPath.startsWith(projectRoot)) {
+      return res.status(403).json({ success: false, error: "Access denied" });
+    }
+    
+    if (fs.existsSync(fullOldPath)) {
+      fs.mkdirSync(path.dirname(fullNewPath), { recursive: true });
+      fs.renameSync(fullOldPath, fullNewPath);
+    }
+    
+    io.emit("FILE_RENAME", { oldPath, newPath });
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(500).json({ success: false, error: err.message });
+  }
 });
 
 // POST /api/orchestrate Request Interfaces
@@ -183,6 +397,32 @@ app.get("/api/registry", async (_req: Request, res: Response): Promise<any> => {
     return res.json({ success: true, specialists });
   } catch (error: any) {
     logger.error("Error fetching registry:", error);
+    return res.status(500).json({ success: false, error: parseHiveFiError(error) });
+  }
+});
+
+// GET /api/balances
+app.get("/api/balances", requireApiKey, async (_req: Request, res: Response): Promise<any> => {
+  try {
+    const addresses = blockchain.getAddresses();
+    const orchestratorBalance = await blockchain.getUSDCBalance(addresses.walletA);
+
+    const specialists = await registry.getAllSpecialists(getHealthStatus());
+    const specialistBalances: Record<string, string> = {};
+
+    for (const spec of specialists) {
+      if (spec.wallet) {
+        specialistBalances[spec.id] = await blockchain.getUSDCBalance(spec.wallet);
+      }
+    }
+
+    return res.json({
+      success: true,
+      orchestratorBalance,
+      specialistBalances
+    });
+  } catch (error: any) {
+    logger.error("Error fetching balances:", error);
     return res.status(500).json({ success: false, error: parseHiveFiError(error) });
   }
 });
